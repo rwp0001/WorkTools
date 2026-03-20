@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <UseWinUI>true</UseWinUI>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <WindowsPackageType>None</WindowsPackageType>
+    <Platforms>x86;x64;ARM64</Platforms>
+    <RuntimeIdentifiers>win-x86;win-x64;win-arm64</RuntimeIdentifiers>
+
+    <Version>1.0.0</Version>
+    <AssemblyTitle>WorkTools Template Expander</AssemblyTitle>
+    <Description>Template expansion tool for generating tag-based output files</Description>
+    <Copyright>Copyright � 2025</Copyright>
+    <Product>WorkTools</Product>
+    <Title>Work Tools</Title>
+    <RepositoryUrl>https://github.com/rwp0001/WorkTools</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+    <PackageProjectUrl>https://github.com/rwp0001/WorkTools</PackageProjectUrl>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.7.250513003" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\WorkTools.Core\WorkTools.Core.csproj" />
+  </ItemGroup>
+
+</Project>

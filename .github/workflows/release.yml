@@ -1,0 +1,69 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  pull_request:
+    branches: [master]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        platform: [x64, arm64]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v2
+
+    - name: Restore
+      run: msbuild WorkTools.App/WorkTools.App.csproj /t:Restore /p:Platform=${{ matrix.platform }}
+
+    - name: Publish
+      run: >
+        msbuild WorkTools.App/WorkTools.App.csproj
+        /t:Publish
+        /p:Configuration=Release
+        /p:Platform=${{ matrix.platform }}
+        /p:RuntimeIdentifier=win-${{ matrix.platform }}
+        /p:SelfContained=true
+        /p:WindowsAppSDKSelfContained=true
+        /p:PublishDir=bin\publish\win-${{ matrix.platform }}\
+        /v:minimal
+
+    - name: Create archive
+      run: Compress-Archive -Path "WorkTools.App/bin/publish/win-${{ matrix.platform }}/*" -DestinationPath "WorkTools-win-${{ matrix.platform }}.zip"
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: WorkTools-win-${{ matrix.platform }}
+        path: WorkTools-win-${{ matrix.platform }}.zip
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+
+    steps:
+    - name: Download artifacts
+      uses: actions/download-artifact@v4
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: |
+          WorkTools-win-x64/WorkTools-win-x64.zip
+          WorkTools-win-arm64/WorkTools-win-arm64.zip
+        generate_release_notes: true

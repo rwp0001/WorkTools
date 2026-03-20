@@ -1,3 +1,7 @@
 <Solution>
+  <Project Path="WorkTools.App/WorkTools.App.csproj">
+    <Platform Solution="Debug|*" Project="x64" />
+  </Project>
+  <Project Path="WorkTools.Core/WorkTools.Core.csproj" />
   <Project Path="WorkTools/WorkTools.csproj" />
 </Solution>
