@@ -21,6 +21,8 @@
 
   <ItemGroup>
     <Content Include="Test.txt" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="TextTemplate.txt" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="TestList.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

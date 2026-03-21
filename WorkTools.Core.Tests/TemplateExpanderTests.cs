@@ -550,4 +550,81 @@ public class TemplateExpanderTests
     }
 
     #endregion
+
+    #region TestTemplate.txt + TestList.txt performance tests
+
+    private static string TestTemplatePath => Path.Combine(AppContext.BaseDirectory, "TextTemplate.txt");
+    private static string TestListPath => Path.Combine(AppContext.BaseDirectory, "TestList.txt");
+
+    private static string ReadTestTemplate() => File.ReadAllText(TestTemplatePath);
+    private static string ReadTestList() => File.ReadAllText(TestListPath);
+
+    [TestMethod]
+    [Timeout(5000)]
+    public void Performance_GeneratePreview_CompletesWithinTimeout()
+    {
+        string templateText = ReadTestTemplate();
+        string tagsText = ReadTestList();
+
+        string output = TemplateExpander.GeneratePreview(templateText, tagsText);
+
+        Assert.IsFalse(string.IsNullOrEmpty(output));
+        Assert.IsFalse(output.Contains("{{TagName}}"),
+            "Output should not contain unreplaced {{TagName}} placeholders.");
+    }
+
+    [TestMethod]
+    [Timeout(5000)]
+    public void Performance_GeneratePreviewBySections_CompletesWithinTimeout()
+    {
+        string templateText = ReadTestTemplate();
+        string tagsText = ReadTestList();
+
+        var results = TemplateExpander.GeneratePreviewBySections(templateText, tagsText);
+
+        Assert.IsTrue(results.Count > 0);
+        foreach (var (_, content) in results)
+        {
+            Assert.IsFalse(content.Contains("{{TagName}}"),
+                "Section content should not contain unreplaced {{TagName}} placeholders.");
+        }
+    }
+
+    [TestMethod]
+    [Timeout(5000)]
+    public void Performance_ExpandSection_CompletesWithinTimeout()
+    {
+        string templateText = ReadTestTemplate();
+        string tagsText = ReadTestList();
+
+        var sections = TemplateExpander.ParseTemplateSections(templateText);
+        var tagNames = TemplateExpander.ParseTagNames(tagsText);
+
+        foreach (var section in sections)
+        {
+            var (header, content) = TemplateExpander.ExpandSection(section, tagNames);
+
+            Assert.IsFalse(string.IsNullOrEmpty(header));
+            Assert.IsFalse(string.IsNullOrEmpty(content));
+            Assert.IsFalse(content.Contains("{{TagName}}"),
+                $"Section '{header}' should not contain unreplaced {{{{TagName}}}} placeholders.");
+        }
+    }
+
+    [TestMethod]
+    [Timeout(5000)]
+    public void Performance_GetStats_CompletesWithinTimeout()
+    {
+        string templateText = ReadTestTemplate();
+        string tagsText = ReadTestList();
+
+        var (tagCount, replacementCount, outputLineCount) =
+            TemplateExpander.GetStats(templateText, tagsText);
+
+        Assert.IsTrue(tagCount > 0);
+        Assert.IsTrue(replacementCount > 0);
+        Assert.IsTrue(outputLineCount > 0);
+    }
+
+    #endregion
 }

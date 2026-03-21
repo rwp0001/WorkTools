@@ -5,7 +5,18 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Title="WorkTools - Template Expander">
 
-    <Grid Padding="24" ColumnSpacing="24">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Grid x:Name="AppTitleBar" Grid.Row="0" Height="32" Padding="12,0">
+            <TextBlock Text="WorkTools" VerticalAlignment="Center"
+                       Style="{StaticResource CaptionTextBlockStyle}" />
+        </Grid>
+
+    <Grid Grid.Row="1" Padding="24" ColumnSpacing="24">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
             <ColumnDefinition Width="*" />
@@ -90,6 +101,8 @@
                 <Button x:Name="SaveAsButton" Content="Save As..."
                         Style="{StaticResource AccentButtonStyle}" Click="SaveAs_Click"
                         Padding="24,8" IsEnabled="False" />
+                <Button x:Name="CopyAllButton" Content="Copy All"
+                        Click="CopyAll_Click" Padding="24,8" IsEnabled="False" />
                 <Button x:Name="ClearButton" Content="Clear"
                         Click="Clear_Click" Padding="24,8" IsEnabled="False" />
             </StackPanel>
@@ -114,11 +127,32 @@
                      CanReorderTabs="False"
                      VerticalAlignment="Stretch" />
 
+            <StackPanel x:Name="ProgressPanel" Grid.Row="1"
+                        Visibility="Collapsed"
+                        HorizontalAlignment="Center" VerticalAlignment="Center"
+                        Spacing="8">
+                <ProgressRing x:Name="PreviewProgressRing"
+                              IsActive="False"
+                              HorizontalAlignment="Center"
+                              Width="48" Height="48" />
+                <TextBlock x:Name="ProgressPercentText"
+                           HorizontalAlignment="Center"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           Text="0%" />
+            </StackPanel>
+
+            <InfoBar x:Name="ValidationInfoBar" Grid.Row="1"
+                     Severity="Warning" Title="Validation"
+                     IsOpen="True" IsClosable="False"
+                     Visibility="Collapsed"
+                     VerticalAlignment="Top" />
+
             <TextBlock x:Name="StatsText" Grid.Row="2"
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                        Text="" />
         </Grid>
 
+        </Grid>
     </Grid>
 
 </Window>
