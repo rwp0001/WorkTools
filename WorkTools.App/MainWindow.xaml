@@ -107,19 +107,12 @@
 
             <TextBlock Grid.Row="0" Text="Output Preview" Style="{StaticResource TitleTextBlockStyle}" />
 
-            <ScrollViewer x:Name="PreviewScroll" Grid.Row="1"
-                          HorizontalScrollBarVisibility="Auto"
-                          VerticalScrollBarVisibility="Auto"
-                          VerticalAlignment="Stretch">
-                <TextBox x:Name="PreviewTextBox"
-                         IsReadOnly="True" AcceptsReturn="True"
-                         TextWrapping="NoWrap"
-                         ScrollViewer.HorizontalScrollBarVisibility="Hidden"
-                         ScrollViewer.HorizontalScrollMode="Disabled"
-                         ScrollViewer.VerticalScrollBarVisibility="Hidden"
-                         ScrollViewer.VerticalScrollMode="Disabled"
-                         PlaceholderText="Preview will appear here as you type..." />
-            </ScrollViewer>
+            <TabView x:Name="PreviewTabView" Grid.Row="1"
+                     IsAddTabButtonVisible="False"
+                     TabWidthMode="SizeToContent"
+                     CanDragTabs="False"
+                     CanReorderTabs="False"
+                     VerticalAlignment="Stretch" />
 
             <TextBlock x:Name="StatsText" Grid.Row="2"
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"

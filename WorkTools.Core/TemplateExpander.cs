@@ -101,6 +101,38 @@ public static class TemplateExpander
         return (tagNames.Length, replacementCount, outputLineCount);
     }
 
+    public static List<(string SectionHeader, string Content)> GeneratePreviewBySections(string templateText, string tagsText)
+    {
+        string[] templateLines = templateText.Split(["\r\n", "\r", "\n"], StringSplitOptions.None);
+        string[] tagNames = tagsText.Split(["\r\n", "\r", "\n"], StringSplitOptions.None)
+            .Where(line => !string.IsNullOrWhiteSpace(line))
+            .ToArray();
+
+        var sections = ParseTemplate(templateLines);
+        var results = new List<(string SectionHeader, string Content)>();
+
+        foreach (var section in sections)
+        {
+            using var writer = new StringWriter();
+            writer.WriteLine(section.ColumnHeader);
+            foreach (string tagName in tagNames)
+            {
+                foreach (string row in section.DataRows)
+                {
+                    writer.WriteLine(row.Replace("{{TagName}}", tagName));
+                }
+            }
+
+            string header = section.SectionHeader.Trim();
+            if (header.StartsWith('[') && header.EndsWith(']'))
+                header = header[1..^1];
+
+            results.Add((header, writer.ToString()));
+        }
+
+        return results;
+    }
+
     public static void WriteSections(List<Section> sections, string[] tagNames, TextWriter writer)
     {
         writer.WriteLine();

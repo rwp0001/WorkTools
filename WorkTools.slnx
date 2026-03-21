@@ -1,7 +1,16 @@
 <Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="x64" />
+  </Configurations>
   <Project Path="WorkTools.App/WorkTools.App.csproj">
-    <Platform Solution="Debug|*" Project="x64" />
+    <Platform Project="x64" />
   </Project>
-  <Project Path="WorkTools.Core/WorkTools.Core.csproj" />
-  <Project Path="WorkTools/WorkTools.csproj" />
+  <Project Path="WorkTools.Core.Tests/WorkTools.Core.Tests.csproj" />
+  <Project Path="WorkTools.Core/WorkTools.Core.csproj">
+    <Platform Solution="*|x64" Project="x64" />
+  </Project>
+  <Project Path="WorkTools/WorkTools.csproj">
+    <Platform Solution="*|x64" Project="x64" />
+  </Project>
 </Solution>

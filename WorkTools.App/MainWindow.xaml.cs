@@ -14,16 +14,15 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         this.InitializeComponent();
-        this.Title = "WorkTools - Template Expander";
+        this.Title = "WorkTools";
 
         _debounceTimer = DispatcherQueue.CreateTimer();
-        _debounceTimer.Interval = TimeSpan.FromMilliseconds(300);
+        _debounceTimer.Interval = TimeSpan.FromMilliseconds(5000);
         _debounceTimer.IsRepeating = false;
         _debounceTimer.Tick += (_, _) => UpdatePreview();
 
         TemplateScroll.SizeChanged += ScrollViewer_SizeChanged;
         TagsScroll.SizeChanged += ScrollViewer_SizeChanged;
-        PreviewScroll.SizeChanged += ScrollViewer_SizeChanged;
     }
 
     private void Input_TextChanged(object sender, TextChangedEventArgs e)
@@ -48,29 +47,64 @@ public sealed partial class MainWindow : Window
         string templateText = TemplateTextBox.Text;
         string tagsText = TagsTextBox.Text;
 
+        PreviewTabView.TabItems.Clear();
+
         if (string.IsNullOrWhiteSpace(templateText) || string.IsNullOrWhiteSpace(tagsText))
         {
-            PreviewTextBox.Text = string.Empty;
             StatsText.Text = string.Empty;
             return;
         }
 
         if (!templateText.Contains("{{TagName}}"))
         {
-            PreviewTextBox.Text = string.Empty;
             StatsText.Text = "Template does not contain {{TagName}} — no replacements will be made.";
             return;
         }
 
         try
         {
-            PreviewTextBox.Text = TemplateExpander.GeneratePreview(templateText, tagsText);
+            var sectionPreviews = TemplateExpander.GeneratePreviewBySections(templateText, tagsText);
+
+            foreach (var (header, content) in sectionPreviews)
+            {
+                var textBox = new TextBox
+                {
+                    IsReadOnly = true,
+                    AcceptsReturn = true,
+                    TextWrapping = TextWrapping.NoWrap,
+                    Text = content
+                };
+                ScrollViewer.SetHorizontalScrollBarVisibility(textBox, ScrollBarVisibility.Hidden);
+                ScrollViewer.SetHorizontalScrollMode(textBox, ScrollMode.Disabled);
+                ScrollViewer.SetVerticalScrollBarVisibility(textBox, ScrollBarVisibility.Hidden);
+                ScrollViewer.SetVerticalScrollMode(textBox, ScrollMode.Disabled);
+
+                var scrollViewer = new ScrollViewer
+                {
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    Content = textBox
+                };
+                scrollViewer.SizeChanged += ScrollViewer_SizeChanged;
+
+                var tab = new TabViewItem
+                {
+                    Header = header,
+                    Content = scrollViewer,
+                    IsClosable = false
+                };
+                PreviewTabView.TabItems.Add(tab);
+            }
+
+            if (sectionPreviews.Count > 0)
+                PreviewTabView.SelectedIndex = 0;
+
             var (tagCount, replacementCount, outputLineCount) = TemplateExpander.GetStats(templateText, tagsText);
             StatsText.Text = $"Tags: {tagCount}  |  Replacements: {replacementCount}  |  Output lines: {outputLineCount}";
         }
         catch
         {
-            PreviewTextBox.Text = string.Empty;
+            PreviewTabView.TabItems.Clear();
             StatsText.Text = string.Empty;
         }
     }
@@ -182,7 +216,7 @@ public sealed partial class MainWindow : Window
         {
             TemplateTextBox.Text = string.Empty;
             TagsTextBox.Text = string.Empty;
-            PreviewTextBox.Text = string.Empty;
+            PreviewTabView.TabItems.Clear();
             FindBox.Text = string.Empty;
             ReplaceBox.Text = "{{TagName}}";
             StatusBar.IsOpen = false;
