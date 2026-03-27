@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace WorkTools.Core;
 
@@ -9,6 +10,7 @@ public static class TemplateExpander
     private const string PersistColumnName = "Persist";
     private const string AccessColumnName = "Access";
     private const string SecLoggingColumnName = "Sec / Logging";
+    private const string SecAccessExamples = "Examples: 'M¬R1', 'R2¬P with CBO', 'Authenticated Users'.";
     private static readonly HashSet<string> AllowedSecAccessLiterals = new(StringComparer.OrdinalIgnoreCase)
     {
         "Default for Object",
@@ -51,13 +53,14 @@ public static class TemplateExpander
         "Sec / Access",
         "Sec / Logging"
     ];
-    private static readonly string[] RequiredNonBlankFields =
-    [
+    private static readonly HashSet<string> RequiredNonBlankFieldSet = new(StringComparer.OrdinalIgnoreCase)
+    {
         "Name",
         "Value",
         "Sec / Access",
         "Sec / Logging"
-    ];
+    };
+    private static readonly Regex SectionHeaderPattern = new(@"^\[(Numeric|Flag|String)\.(\d)\.(\d)\]$", RegexOptions.Compiled);
 
     // In Crimson section headers [Datatype.X.Y], X is Format Type.
     private static readonly Dictionary<int, HashSet<string>> AllowedDatatypesByFormatType = new()
@@ -142,9 +145,7 @@ public static class TemplateExpander
     public static void Generate(string templatePath, string tagsPath, string outputPath)
     {
         string[] templateLines = File.ReadAllLines(templatePath);
-        string[] tagNames = File.ReadAllLines(tagsPath)
-            .Where(line => !string.IsNullOrWhiteSpace(line))
-            .ToArray();
+        string[] tagNames = ParseTagNames(File.ReadAllText(tagsPath));
 
         var sections = ParseTemplate(templateLines);
 
@@ -160,10 +161,8 @@ public static class TemplateExpander
 
     public static string GeneratePreview(string templateText, string tagsText)
     {
-        string[] templateLines = templateText.Split(["\r\n", "\r", "\n"], StringSplitOptions.None);
-        string[] tagNames = tagsText.Split(["\r\n", "\r", "\n"], StringSplitOptions.None)
-            .Where(line => !string.IsNullOrWhiteSpace(line))
-            .ToArray();
+        string[] templateLines = SplitLines(templateText);
+        string[] tagNames = ParseTagNames(tagsText);
 
         var sections = ParseTemplate(templateLines);
 
@@ -174,10 +173,8 @@ public static class TemplateExpander
 
     public static (int TagCount, int ReplacementCount, int OutputLineCount) GetStats(string templateText, string tagsText)
     {
-        string[] templateLines = templateText.Split(["\r\n", "\r", "\n"], StringSplitOptions.None);
-        string[] tagNames = tagsText.Split(["\r\n", "\r", "\n"], StringSplitOptions.None)
-            .Where(line => !string.IsNullOrWhiteSpace(line))
-            .ToArray();
+        string[] templateLines = SplitLines(templateText);
+        string[] tagNames = ParseTagNames(tagsText);
 
         var sections = ParseTemplate(templateLines);
 
@@ -201,7 +198,7 @@ public static class TemplateExpander
     public static List<string> ValidateTemplate(string templateText)
     {
         var errors = new List<string>();
-        string[] templateLines = templateText.Split(["\r\n", "\r", "\n"], StringSplitOptions.None);
+        string[] templateLines = SplitLines(templateText);
         var sections = ParseTemplate(templateLines);
 
         if (sections.Count == 0)
@@ -210,11 +207,9 @@ public static class TemplateExpander
             return errors;
         }
 
-        var headerPattern = new System.Text.RegularExpressions.Regex(@"^\[(Numeric|Flag|String)\.(\d)\.(\d)\]$");
-
         foreach (var section in sections)
         {
-            var match = headerPattern.Match(section.SectionHeader);
+            var match = SectionHeaderPattern.Match(section.SectionHeader);
             if (!match.Success)
             {
                 errors.Add($"Section header '{section.SectionHeader}' does not match expected format [Datatype.N.N] where Datatype is Numeric, Flag, or String.");
@@ -249,23 +244,13 @@ public static class TemplateExpander
                 }
             }
 
-            int expectedFieldCount = section.ColumnHeader.Split('\t').Length;
-            string[] headers = section.ColumnHeader.Split('\t');
-            var columnSet = headers
-                .Select(c => c.Trim())
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            int secAccessColumnIndex = Array.FindIndex(
-                headers,
-                h => string.Equals(h.Trim(), SecAccessColumnName, StringComparison.OrdinalIgnoreCase));
-            int persistColumnIndex = Array.FindIndex(
-                headers,
-                h => string.Equals(h.Trim(), PersistColumnName, StringComparison.OrdinalIgnoreCase));
-            int accessColumnIndex = Array.FindIndex(
-                headers,
-                h => string.Equals(h.Trim(), AccessColumnName, StringComparison.OrdinalIgnoreCase));
-            int secLoggingColumnIndex = Array.FindIndex(
-                headers,
-                h => string.Equals(h.Trim(), SecLoggingColumnName, StringComparison.OrdinalIgnoreCase));
+            string[] headers = GetNormalizedHeaders(section.ColumnHeader);
+            int expectedFieldCount = headers.Length;
+            var columnSet = headers.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            int secAccessColumnIndex = FindColumnIndex(headers, SecAccessColumnName);
+            int persistColumnIndex = FindColumnIndex(headers, PersistColumnName);
+            int accessColumnIndex = FindColumnIndex(headers, AccessColumnName);
+            int secLoggingColumnIndex = FindColumnIndex(headers, SecLoggingColumnName);
 
             var missingFields = RequiredTagFields
                 .Where(field => !columnSet.Contains(field))
@@ -279,7 +264,7 @@ public static class TemplateExpander
 
             for (int d = 0; d < section.DataRows.Count; d++)
             {
-                string[] fields = section.DataRows[d].Split('\t');
+                string[] fields = SplitTabDelimited(section.DataRows[d]);
                 int actualFieldCount = fields.Length;
                 if (actualFieldCount != expectedFieldCount)
                 {
@@ -287,13 +272,11 @@ public static class TemplateExpander
                     continue;
                 }
 
-                // Check that required non-blank fields are actually non-blank
                 for (int i = 0; i < headers.Length; i++)
                 {
-                    string headerTrimmed = headers[i].Trim();
-                    if (RequiredNonBlankFields.Contains(headerTrimmed) && string.IsNullOrWhiteSpace(fields[i]))
+                    if (RequiredNonBlankFieldSet.Contains(headers[i]) && string.IsNullOrWhiteSpace(fields[i]))
                     {
-                        errors.Add($"Section '{section.SectionHeader}' row {d + 1}: required field '{headerTrimmed}' cannot be blank.");
+                        errors.Add($"Section '{section.SectionHeader}' row {d + 1}: required field '{headers[i]}' cannot be blank.");
                     }
                 }
 
@@ -338,25 +321,6 @@ public static class TemplateExpander
         return errors;
     }
 
-    private static List<string> ValidateNonBlankFields(string[] fields, string sectionHeader, int rowNumber)
-    {
-        var blankFieldErrors = new List<string>();
-
-        for (int i = 0; i < fields.Length; i++)
-        {
-            if (string.IsNullOrWhiteSpace(fields[i]))
-            {
-                string fieldName = i < RequiredTagFields.Length ? RequiredTagFields[i] : $"Field{i + 1}";
-                if (RequiredNonBlankFields.Contains(fieldName))
-                {
-                    blankFieldErrors.Add($"Section '{sectionHeader}' row {rowNumber}: '{fieldName}' cannot be blank.");
-                }
-            }
-        }
-
-        return blankFieldErrors;
-    }
-
     private static bool TryValidateSecAccess(string value, out string? error)
     {
         string trimmed = value.Trim();
@@ -386,7 +350,7 @@ public static class TemplateExpander
 
         if (tokens.Length == 0)
         {
-            error = "Expected one or more access tokens (M, R1-R8, P), optionally followed by ' with CBO'.";
+            error = $"Expected one or more access tokens (M, R1-R8, P), optionally followed by ' with CBO'. {SecAccessExamples}";
             return false;
         }
 
@@ -397,7 +361,20 @@ public static class TemplateExpander
 
         if (invalidTokens.Length > 0)
         {
-            error = $"Invalid access token(s): {string.Join(", ", invalidTokens)}.";
+            error = $"Invalid access token(s): {string.Join(", ", invalidTokens)}. Allowed tokens: M, R1-R8, P. {SecAccessExamples}";
+            return false;
+        }
+
+        var duplicateTokens = tokens
+            .GroupBy(t => t, StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key)
+            .OrderBy(t => t, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (duplicateTokens.Length > 0)
+        {
+            error = $"Duplicate access token(s): {string.Join(", ", duplicateTokens)}. Each token may only appear once. {SecAccessExamples}";
             return false;
         }
 
@@ -463,14 +440,12 @@ public static class TemplateExpander
         return (header, sb.ToString());
     }
 
-    public static string[] ParseTagNames(string tagsText)
+    public static string[] ParseTagNames(string tagsText, bool sort = false)
     {
-        return tagsText.Split(["\r\n", "\r", "\n"], StringSplitOptions.None)
-            .Where(line => !string.IsNullOrWhiteSpace(line))
-            .ToArray();
+        return NormalizeTagNames(SplitLines(tagsText), sort: sort);
     }
 
-    public static string[] ParseCrimsonExportTagNames(string exportText, string nameColumn = "Name")
+    public static string[] ParseCrimsonExportTagNames(string exportText, string nameColumn = "Name", bool sort = false)
     {
         if (string.IsNullOrWhiteSpace(exportText))
             return [];
@@ -483,16 +458,15 @@ public static class TemplateExpander
 
         foreach (var section in sections)
         {
-            string[] headers = section.ColumnHeader.Split('\t');
-            int nameIndex = Array.FindIndex(headers,
-                h => string.Equals(h.Trim(), nameColumn, StringComparison.OrdinalIgnoreCase));
+            string[] headers = GetNormalizedHeaders(section.ColumnHeader);
+            int nameIndex = FindColumnIndex(headers, nameColumn);
 
             if (nameIndex < 0)
                 continue;
 
             foreach (string row in section.DataRows)
             {
-                string[] fields = row.Split('\t');
+                string[] fields = SplitTabDelimited(row);
                 if (nameIndex >= fields.Length)
                     continue;
 
@@ -502,28 +476,25 @@ public static class TemplateExpander
             }
         }
 
-        return tags
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        return NormalizeTagNames(tags, deduplicate: true, sort: sort);
     }
 
-    public static string BuildTagListFromCrimsonExport(string exportText, string nameColumn = "Name")
+    public static string BuildTagListFromCrimsonExport(string exportText, string nameColumn = "Name", bool sort = false)
     {
-        string[] tags = ParseCrimsonExportTagNames(exportText, nameColumn);
+        string[] tags = ParseCrimsonExportTagNames(exportText, nameColumn, sort);
         return string.Join(Environment.NewLine, tags);
     }
 
-    public static string BuildTagListFromCrimsonExportFile(string exportFilePath, string nameColumn = "Name")
+    public static string BuildTagListFromCrimsonExportFile(string exportFilePath, string nameColumn = "Name", bool sort = false)
     {
         using var reader = new StreamReader(exportFilePath, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
         string text = reader.ReadToEnd();
-        return BuildTagListFromCrimsonExport(text, nameColumn);
+        return BuildTagListFromCrimsonExport(text, nameColumn, sort);
     }
 
     public static List<Section> ParseTemplateSections(string templateText)
     {
-        string[] templateLines = templateText.Split(["\r\n", "\r", "\n"], StringSplitOptions.None);
-        return ParseTemplate(templateLines);
+        return ParseTemplate(SplitLines(templateText));
     }
 
     public static void WriteSections(List<Section> sections, string[] tagNames, TextWriter writer)
@@ -561,5 +532,43 @@ public static class TemplateExpander
                 }
             }
         }
+    }
+
+    private static string[] SplitLines(string text)
+    {
+        return text.Split(["\r\n", "\r", "\n"], StringSplitOptions.None);
+    }
+
+    private static string[] SplitTabDelimited(string value)
+    {
+        return value.Split('\t');
+    }
+
+    private static string[] GetNormalizedHeaders(string columnHeader)
+    {
+        return SplitTabDelimited(columnHeader)
+            .Select(h => h.Trim())
+            .ToArray();
+    }
+
+    private static int FindColumnIndex(string[] headers, string columnName)
+    {
+        return Array.FindIndex(headers,
+            h => string.Equals(h, columnName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string[] NormalizeTagNames(IEnumerable<string> tagNames, bool deduplicate = false, bool sort = false)
+    {
+        IEnumerable<string> normalized = tagNames
+            .Select(tag => tag.Trim())
+            .Where(tag => !string.IsNullOrWhiteSpace(tag));
+
+        if (deduplicate)
+            normalized = normalized.Distinct(StringComparer.OrdinalIgnoreCase);
+
+        if (sort)
+            normalized = normalized.OrderBy(tag => tag, StringComparer.OrdinalIgnoreCase);
+
+        return normalized.ToArray();
     }
 }

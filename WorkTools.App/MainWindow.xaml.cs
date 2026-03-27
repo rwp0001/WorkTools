@@ -37,9 +37,29 @@ public sealed partial class MainWindow : Window
 
     private void Input_TextChanged(object sender, TextChangedEventArgs e)
     {
+        QueuePreviewRefresh();
+        UpdateButtonStates();
+    }
+
+    private void InputOption_Changed(object sender, RoutedEventArgs e)
+    {
+        QueuePreviewRefresh();
+    }
+
+    private void QueuePreviewRefresh()
+    {
         _debounceTimer.Stop();
         _debounceTimer.Start();
-        UpdateButtonStates();
+    }
+
+    private string[] GetEffectiveTagNames(string tagsText)
+    {
+        return TemplateExpander.ParseTagNames(tagsText, SortTagsCheckBox.IsChecked == true);
+    }
+
+    private string GetEffectiveTagsText(string tagsText)
+    {
+        return string.Join(Environment.NewLine, GetEffectiveTagNames(tagsText));
     }
 
     private void UpdateButtonStates()
@@ -104,7 +124,7 @@ public sealed partial class MainWindow : Window
         try
         {
             var sections = TemplateExpander.ParseTemplateSections(templateText);
-            var tagNames = TemplateExpander.ParseTagNames(tagsText);
+            var tagNames = GetEffectiveTagNames(tagsText);
             int totalSections = sections.Count;
 
             var sectionResults = await Task.Run(() =>
@@ -366,6 +386,7 @@ public sealed partial class MainWindow : Window
         {
             TemplateTextBox.Text = string.Empty;
             TagsTextBox.Text = string.Empty;
+            SortTagsCheckBox.IsChecked = false;
             PreviewTabView.TabItems.Clear();
             ShowPreview();
             FindBox.Text = string.Empty;
@@ -398,7 +419,8 @@ public sealed partial class MainWindow : Window
 
         try
         {
-            TemplateExpander.GenerateFromText(templateText, tagsText, path);
+            string output = TemplateExpander.GeneratePreview(templateText, GetEffectiveTagsText(tagsText));
+            await File.WriteAllTextAsync(path, output);
             ShowStatus($"Output saved successfully: {path}", InfoBarSeverity.Success);
         }
         catch (Exception ex)
@@ -433,7 +455,7 @@ public sealed partial class MainWindow : Window
         try
         {
             string fullOutput = await Task.Run(() =>
-                TemplateExpander.GeneratePreview(templateText, tagsText));
+                TemplateExpander.GeneratePreview(templateText, GetEffectiveTagsText(tagsText)));
 
             var dataPackage = new DataPackage();
             dataPackage.SetText(fullOutput);

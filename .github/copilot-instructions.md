@@ -1,4 +1,10 @@
 # WorkTools repository instructions
+This tool is used to create files to be imported into a HMI software called Crimson 3.2, it used to program Red Lion HMIs.
+When creating the template the user makes the structure of the first instance of a class (A Rockwell Automation Studio 5000 AOI datatype normally.) in the crimson software.
+After the class was formatted the way they want, The user gets a list of all the instances of the class from a studio 5000 tag export.
+The Crimson software fails silently without changing the database when importing a malformed file. 
+This creates issues when using the program for user.
+The goal of this program is to create files that will be imported with out issues.
 
 ## Build and test commands
 

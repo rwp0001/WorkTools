@@ -314,6 +314,23 @@ public class TemplateExpanderTests
     }
 
     [TestMethod]
+    public void ValidateTemplate_SecAccess_DuplicateToken_ReturnsError()
+    {
+        string template =
+            """
+
+            [Numeric.1.0]
+
+            Name	Value	Label	Alias	Desc	Class	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C	M¬R1¬R1	Default for Object
+            """;
+
+        var errors = TemplateExpander.ValidateTemplate(template);
+
+        Assert.IsTrue(errors.Any(e => e.Contains("Duplicate access token(s): R1", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    [TestMethod]
     public void ValidateTemplate_Persist_Retentive_IsValid()
     {
         string template =
@@ -685,6 +702,26 @@ public class TemplateExpanderTests
         Assert.AreEqual("Alpha\t100", lines[4]);
     }
 
+    [TestMethod]
+    public void ParseTagNames_TrimsWhitespaceAndIgnoresBlankLines()
+    {
+        string tagsText = "  Tag1  \r\n\r\n\tTag2\t\n   ";
+
+        string[] tags = TemplateExpander.ParseTagNames(tagsText);
+
+        CollectionAssert.AreEqual(new[] { "Tag1", "Tag2" }, tags);
+    }
+
+    [TestMethod]
+    public void ParseTagNames_SortEnabled_ReturnsSortedTags()
+    {
+        string tagsText = "Zulu\nalpha\nBravo";
+
+        string[] tags = TemplateExpander.ParseTagNames(tagsText, sort: true);
+
+        CollectionAssert.AreEqual(new[] { "alpha", "Bravo", "Zulu" }, tags);
+    }
+
     #region Test.txt file-based tests
 
     private static string TestFilePath => Path.Combine(AppContext.BaseDirectory, "Test.txt");
@@ -942,6 +979,18 @@ public class TemplateExpanderTests
         Assert.IsTrue(tagLines.Length > 0);
         Assert.AreEqual(tagLines.Distinct(StringComparer.OrdinalIgnoreCase).Count(), tagLines.Length,
             "Tag list should be de-duplicated.");
+    }
+
+    [TestMethod]
+    public void TestFile_BuildTagListFromCrimsonExport_SortOption_ReturnsSortedTags()
+    {
+        string templateText = ReadTestFile();
+
+        string[] tagLines = TemplateExpander.BuildTagListFromCrimsonExport(templateText, sort: true)
+            .Split(["\r\n", "\r", "\n"], StringSplitOptions.RemoveEmptyEntries);
+        string[] sorted = tagLines.OrderBy(tag => tag, StringComparer.OrdinalIgnoreCase).ToArray();
+
+        CollectionAssert.AreEqual(sorted, tagLines);
     }
 
     [TestMethod]
