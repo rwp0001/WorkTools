@@ -10,6 +10,13 @@ public static class TemplateExpander
     private const string PersistColumnName = "Persist";
     private const string AccessColumnName = "Access";
     private const string SecLoggingColumnName = "Sec / Logging";
+    private const string FormTypeColumnName = "FormType";
+    private const string ColTypeColumnName = "ColType";
+    private const string FormatLinkColumnName = "Format / Link";
+    private const string ColorLinkColumnName = "Color / Link";
+    private const string ColorColorColumnName = "Color / Color";
+    private const string ColorOnColumnName = "Color / On";
+    private const string ColorOffColumnName = "Color / Off";
     private const string SecAccessExamples = "Examples: 'M¬R1', 'R2¬P with CBO', 'Authenticated Users'.";
     private static readonly HashSet<string> AllowedSecAccessLiterals = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -23,14 +30,14 @@ public static class TemplateExpander
         "Non-Retentive",
         "Retentive"
     };
-    // Access field options from Crimson export.
+    // Accepted Access values used by this validator for Crimson export/import data.
     private static readonly HashSet<string> AllowedAccessValues = new(StringComparer.OrdinalIgnoreCase)
     {
         "Read and Write",
         "Write Only",
         "Read Only"
     };
-    // Sec / Logging (Write Logging) field options from Crimson export.
+    // Accepted Sec / Logging values used by this validator for Crimson export/import data.
     private static readonly HashSet<string> AllowedSecLoggingValues = new(StringComparer.OrdinalIgnoreCase)
     {
         "Default for Object",
@@ -38,10 +45,48 @@ public static class TemplateExpander
         "Log Changes by Users",
         "Log Changes by Users and Programs"
     };
+    // Accepted FormType values used by this validator for non-simple Crimson tags.
+    private static readonly HashSet<string> AllowedFormTypeValues = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "General",
+        "Numeric",
+        "Scientific",
+        "Time and Date",
+        "IP Address",
+        "Two-State",
+        "Multi-State",
+        "Linked",
+        "String"
+    };
+    private static readonly Dictionary<string, HashSet<string>> AllowedFormTypesByDatatype = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Numeric"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "General", "Numeric", "Scientific", "Time and Date", "IP Address", "Two-State", "Multi-State", "Linked"
+        },
+        ["Flag"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Two-State", "Linked" },
+        ["String"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "General", "Linked", "String" }
+    };
+    // Accepted ColType values used by this validator for non-simple Crimson tags.
+    private static readonly HashSet<string> AllowedColTypeValues = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "General",
+        "Fixed",
+        "Two-State",
+        "Multi-State",
+        "Linked"
+    };
+    private static readonly Dictionary<string, HashSet<string>> AllowedColTypesByDatatype = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Numeric"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "General", "Fixed", "Two-State", "Multi-State", "Linked" },
+        ["Flag"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "General", "Fixed", "Two-State", "Linked" },
+        ["String"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "General", "Fixed", "Linked" }
+    };
     private static readonly HashSet<string> AllowedSecAccessRoleTokens = new(StringComparer.OrdinalIgnoreCase)
     {
         "M", "R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", "P"
     };
+    // Minimum columns this validator requires for the non-simple expandable template workflow.
     private static readonly string[] RequiredTagFields =
     [
         "Name",
@@ -50,19 +95,42 @@ public static class TemplateExpander
         "Alias",
         "Desc",
         "Class",
+        "FormType",
+        "ColType",
         "Sec / Access",
         "Sec / Logging"
     ];
+    // Required columns above that must also contain a non-blank value in each data row.
     private static readonly HashSet<string> RequiredNonBlankFieldSet = new(StringComparer.OrdinalIgnoreCase)
     {
         "Name",
         "Value",
+        "FormType",
+        "ColType",
         "Sec / Access",
         "Sec / Logging"
     };
+    // Simple tags are valid in Crimson, but this template expansion workflow only recognizes
+    // the expandable section types used here: Numeric, Flag, and String.
     private static readonly Regex SectionHeaderPattern = new(@"^\[(Numeric|Flag|String)\.(\d)\.(\d)\]$", RegexOptions.Compiled);
 
-    // In Crimson section headers [Datatype.X.Y], X is Format Type.
+    // In a Crimson section header like [Numeric.X.Y], X is the format type code:
+    // 0 = General, 1 = Numeric, 2 = Scientific, 3 = Time and Date, 4 = IP Address,
+    // 5 = Two-State, 6 = Multi-State, 7 = Linked, 8 = String.
+    private static readonly Dictionary<int, string> FormatTypeNames = new()
+    {
+        [0] = "General",
+        [1] = "Numeric",
+        [2] = "Scientific",
+        [3] = "Time and Date",
+        [4] = "IP Address",
+        [5] = "Two-State",
+        [6] = "Multi-State",
+        [7] = "Linked",
+        [8] = "String"
+    };
+
+    // In a Crimson section header like [Numeric.X.Y], X is the format type code.
     private static readonly Dictionary<int, HashSet<string>> AllowedDatatypesByFormatType = new()
     {
         [0] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Numeric", "String" },
@@ -76,7 +144,7 @@ public static class TemplateExpander
         [8] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "String" }
     };
 
-    // In Crimson section headers [Datatype.X.Y], Y is Color Type:
+    // In a Crimson section header like [Numeric.X.Y], Y is the color type code:
     // 0 = General, 1 = Fixed, 2 = Two-State, 3 = Multi-State, 4 = Linked.
     private static readonly Dictionary<int, string> ColorTypeNames = new()
     {
@@ -87,7 +155,7 @@ public static class TemplateExpander
         [4] = "Linked"
     };
 
-    // Color Type compatibility by datatype:
+    // Allowed color type compatibility by datatype:
     // General(0): Flag, Numeric, String
     // Fixed(1): Flag, Numeric, String
     // Two-State(2): Flag, Numeric
@@ -181,8 +249,8 @@ public static class TemplateExpander
         int totalDataRows = sections.Sum(s => s.DataRows.Count);
         int replacementCount = totalDataRows * tagNames.Length;
 
-        // header lines per section: section header + blank line + column header = 3
-        // plus leading blank line and separators between sections
+        // Header lines per section: section header + blank line + column header = 3,
+        // plus the leading blank line and blank separators between sections.
         int outputLineCount = 1; // leading blank line
         for (int s = 0; s < sections.Count; s++)
         {
@@ -209,6 +277,10 @@ public static class TemplateExpander
 
         foreach (var section in sections)
         {
+            string? sectionDatatype = null;
+            string? sectionFormatTypeName = null;
+            string? sectionColorTypeName = null;
+
             var match = SectionHeaderPattern.Match(section.SectionHeader);
             if (!match.Success)
             {
@@ -219,19 +291,25 @@ public static class TemplateExpander
                 string datatype = match.Groups[1].Value;
                 int formatType = int.Parse(match.Groups[2].Value);
                 int colorType = int.Parse(match.Groups[3].Value);
+                sectionDatatype = datatype;
+
+                bool hasFormatTypeName = FormatTypeNames.TryGetValue(formatType, out string? formatTypeName);
+                string formatTypeDisplay = hasFormatTypeName ? $"{formatType} ({formatTypeName})" : formatType.ToString();
+                sectionFormatTypeName = formatTypeName;
 
                 if (!AllowedDatatypesByFormatType.TryGetValue(formatType, out var allowedDatatypes))
                 {
-                    errors.Add($"Section '{section.SectionHeader}' uses unsupported Format Type '{formatType}'.");
+                    errors.Add($"Section '{section.SectionHeader}' uses unsupported Format Type '{formatTypeDisplay}'.");
                 }
                 else if (!allowedDatatypes.Contains(datatype))
                 {
                     string allowed = string.Join(", ", allowedDatatypes.OrderBy(v => v, StringComparer.Ordinal));
-                    errors.Add($"Section '{section.SectionHeader}' has datatype '{datatype}' but Format Type '{formatType}' allows: {allowed}.");
+                    errors.Add($"Section '{section.SectionHeader}' has datatype '{datatype}' but Format Type '{formatTypeDisplay}' allows: {allowed}.");
                 }
 
                 bool hasColorTypeName = ColorTypeNames.TryGetValue(colorType, out string? colorTypeName);
                 string colorTypeDisplay = hasColorTypeName ? $"{colorType} ({colorTypeName})" : colorType.ToString();
+                sectionColorTypeName = colorTypeName;
 
                 if (!AllowedDatatypesByColorType.TryGetValue(colorType, out var allowedColorDatatypes))
                 {
@@ -251,6 +329,8 @@ public static class TemplateExpander
             int persistColumnIndex = FindColumnIndex(headers, PersistColumnName);
             int accessColumnIndex = FindColumnIndex(headers, AccessColumnName);
             int secLoggingColumnIndex = FindColumnIndex(headers, SecLoggingColumnName);
+            int formTypeColumnIndex = FindColumnIndex(headers, FormTypeColumnName);
+            int colTypeColumnIndex = FindColumnIndex(headers, ColTypeColumnName);
 
             var missingFields = RequiredTagFields
                 .Where(field => !columnSet.Contains(field))
@@ -260,6 +340,28 @@ public static class TemplateExpander
             {
                 errors.Add(
                     $"Section '{section.SectionHeader}' is missing required tag field(s): {string.Join(", ", missingFields)}.");
+            }
+
+            if (sectionFormatTypeName is not null)
+            {
+                foreach (string requiredFormatColumn in GetRequiredFormatColumns(sectionFormatTypeName))
+                {
+                    if (!columnSet.Contains(requiredFormatColumn))
+                    {
+                        errors.Add($"Section '{section.SectionHeader}' uses FormType '{sectionFormatTypeName}' and requires column '{requiredFormatColumn}'. ");
+                    }
+                }
+            }
+
+            if (sectionColorTypeName is not null)
+            {
+                foreach (string requiredColorColumn in GetRequiredColorColumns(sectionColorTypeName))
+                {
+                    if (!columnSet.Contains(requiredColorColumn))
+                    {
+                        errors.Add($"Section '{section.SectionHeader}' uses ColType '{sectionColorTypeName}' and requires column '{requiredColorColumn}'. ");
+                    }
+                }
             }
 
             for (int d = 0; d < section.DataRows.Count; d++)
@@ -277,6 +379,78 @@ public static class TemplateExpander
                     if (RequiredNonBlankFieldSet.Contains(headers[i]) && string.IsNullOrWhiteSpace(fields[i]))
                     {
                         errors.Add($"Section '{section.SectionHeader}' row {d + 1}: required field '{headers[i]}' cannot be blank.");
+                    }
+                }
+
+                if (formTypeColumnIndex >= 0)
+                {
+                    string formTypeValue = fields[formTypeColumnIndex].Trim();
+                    if (!string.IsNullOrWhiteSpace(formTypeValue))
+                    {
+                        if (!AllowedFormTypeValues.Contains(formTypeValue))
+                        {
+                            errors.Add($"Section '{section.SectionHeader}' row {d + 1}: invalid '{FormTypeColumnName}' value '{fields[formTypeColumnIndex]}'. Allowed values: General, Numeric, Scientific, Time and Date, IP Address, Two-State, Multi-State, Linked, String.");
+                        }
+                        else
+                        {
+                            if (sectionDatatype is not null
+                                && AllowedFormTypesByDatatype.TryGetValue(sectionDatatype, out var allowedFormTypes)
+                                && !allowedFormTypes.Contains(formTypeValue))
+                            {
+                                string allowed = string.Join(", ", allowedFormTypes.OrderBy(v => v, StringComparer.Ordinal));
+                                errors.Add($"Section '{section.SectionHeader}' row {d + 1}: datatype '{sectionDatatype}' does not allow '{FormTypeColumnName}' value '{formTypeValue}'. Allowed values: {allowed}.");
+                            }
+
+                            if (sectionFormatTypeName is not null && !string.Equals(formTypeValue, sectionFormatTypeName, StringComparison.OrdinalIgnoreCase))
+                            {
+                                errors.Add($"Section '{section.SectionHeader}' row {d + 1}: '{FormTypeColumnName}' value '{formTypeValue}' does not match section Format Type '{sectionFormatTypeName}'.");
+                            }
+
+                            foreach (string requiredFormatColumn in GetRequiredFormatColumns(formTypeValue))
+                            {
+                                int requiredFormatColumnIndex = FindColumnIndex(headers, requiredFormatColumn);
+                                if (requiredFormatColumnIndex >= 0 && string.IsNullOrWhiteSpace(fields[requiredFormatColumnIndex]))
+                                {
+                                    errors.Add($"Section '{section.SectionHeader}' row {d + 1}: required field '{requiredFormatColumn}' cannot be blank when '{FormTypeColumnName}' is '{formTypeValue}'.");
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (colTypeColumnIndex >= 0)
+                {
+                    string colTypeValue = fields[colTypeColumnIndex].Trim();
+                    if (!string.IsNullOrWhiteSpace(colTypeValue))
+                    {
+                        if (!AllowedColTypeValues.Contains(colTypeValue))
+                        {
+                            errors.Add($"Section '{section.SectionHeader}' row {d + 1}: invalid '{ColTypeColumnName}' value '{fields[colTypeColumnIndex]}'. Allowed values: General, Fixed, Two-State, Multi-State, Linked.");
+                        }
+                        else
+                        {
+                            if (sectionDatatype is not null
+                                && AllowedColTypesByDatatype.TryGetValue(sectionDatatype, out var allowedColTypes)
+                                && !allowedColTypes.Contains(colTypeValue))
+                            {
+                                string allowed = string.Join(", ", allowedColTypes.OrderBy(v => v, StringComparer.Ordinal));
+                                errors.Add($"Section '{section.SectionHeader}' row {d + 1}: datatype '{sectionDatatype}' does not allow '{ColTypeColumnName}' value '{colTypeValue}'. Allowed values: {allowed}.");
+                            }
+
+                            if (sectionColorTypeName is not null && !string.Equals(colTypeValue, sectionColorTypeName, StringComparison.OrdinalIgnoreCase))
+                            {
+                                errors.Add($"Section '{section.SectionHeader}' row {d + 1}: '{ColTypeColumnName}' value '{colTypeValue}' does not match section Color Type '{sectionColorTypeName}'.");
+                            }
+
+                            foreach (string requiredColorColumn in GetRequiredColorColumns(colTypeValue))
+                            {
+                                int requiredColorColumnIndex = FindColumnIndex(headers, requiredColorColumn);
+                                if (requiredColorColumnIndex >= 0 && string.IsNullOrWhiteSpace(fields[requiredColorColumnIndex]))
+                                {
+                                    errors.Add($"Section '{section.SectionHeader}' row {d + 1}: required field '{requiredColorColumn}' cannot be blank when '{ColTypeColumnName}' is '{colTypeValue}'.");
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -399,7 +573,7 @@ public static class TemplateExpander
 
     public static (string Header, string Content) ExpandSection(Section section, string[] tagNames)
     {
-        // Pre-split each data row on the placeholder so we scan each row only once
+        // Pre-split each data row on the placeholder so each row is scanned only once.
         var splitRows = new string[section.DataRows.Count][];
         int totalSegmentLength = 0;
         for (int r = 0; r < section.DataRows.Count; r++)
@@ -409,8 +583,9 @@ public static class TemplateExpander
                 totalSegmentLength += seg.Length;
         }
 
-        // Estimate capacity: column header + newline, then per tag per row:
-        // segment chars + (splits-1)*tagName.Length + newline
+        // Rough capacity estimate: column header + newline, then per tag per row:
+        // segment chars + inserted tag name chars + newline.
+        // The estimate uses the first tag length as a simple approximation.
         int avgTagLen = tagNames.Length > 0 ? tagNames[0].Length : 0;
         int rowCount = section.DataRows.Count;
         int capacity = section.ColumnHeader.Length + 2
@@ -512,7 +687,7 @@ public static class TemplateExpander
             writer.WriteLine();
             writer.WriteLine(section.ColumnHeader);
 
-            // Pre-split rows on placeholder once per section
+            // Pre-split rows on the placeholder once per section.
             var splitRows = new string[section.DataRows.Count][];
             for (int r = 0; r < section.DataRows.Count; r++)
                 splitRows[r] = section.DataRows[r].Split(Placeholder);
@@ -521,7 +696,7 @@ public static class TemplateExpander
             {
                 foreach (var parts in splitRows)
                 {
-                    // Assemble from pre-split segments
+                    // Rebuild the row by inserting the current tag name between split segments.
                     for (int p = 0; p < parts.Length; p++)
                     {
                         if (p > 0)
@@ -555,6 +730,28 @@ public static class TemplateExpander
     {
         return Array.FindIndex(headers,
             h => string.Equals(h, columnName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string[] GetRequiredFormatColumns(string formType)
+    {
+        if (string.Equals(formType, "Linked", StringComparison.OrdinalIgnoreCase))
+            return [FormatLinkColumnName];
+
+        return [];
+    }
+
+    private static string[] GetRequiredColorColumns(string colType)
+    {
+        if (string.Equals(colType, "Linked", StringComparison.OrdinalIgnoreCase))
+            return [ColorLinkColumnName];
+
+        if (string.Equals(colType, "Fixed", StringComparison.OrdinalIgnoreCase))
+            return [ColorColorColumnName];
+
+        if (string.Equals(colType, "Two-State", StringComparison.OrdinalIgnoreCase))
+            return [ColorOnColumnName, ColorOffColumnName];
+
+        return [];
     }
 
     private static string[] NormalizeTagNames(IEnumerable<string> tagNames, bool deduplicate = false, bool sort = false)

@@ -56,9 +56,9 @@ public class TemplateExpanderTests
 
     private const string Tags = "Tag1\nTag2";
     private const string RequiredTagColumns =
-        "Name\tValue\tLabel\tAlias\tDesc\tClass\tSec / Access\tSec / Logging";
+        "Name\tValue\tLabel\tAlias\tDesc\tClass\tFormType\tColType\tSec / Access\tSec / Logging";
     private const string RequiredTagDataRow =
-        "A\tB\tL\tAl\tD\tC\tAuthenticated Users\tDefault for Object";
+        "A\tB\tL\tAl\tD\tC\tNumeric\tGeneral\tAuthenticated Users\tDefault for Object";
 
     private static string[] SplitOutputLines(string output) =>
         output.Split(["\r\n", "\r", "\n"], StringSplitOptions.None);
@@ -134,10 +134,9 @@ public class TemplateExpanderTests
 
             [Flag.5.0]
 
-            Name	Value	Label	Alias	Desc	Class	Sec / Access	Sec / Logging
-            A	B	L	Al	D	C	Authenticated Users	Default for Object
+            Name	Value	Label	Alias	Desc	Class	FormType	ColType	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C	Two-State	General	Authenticated Users	Default for Object
             """;
-
         var errors = TemplateExpander.ValidateTemplate(template);
 
         Assert.AreEqual(0, errors.Count);
@@ -151,13 +150,13 @@ public class TemplateExpanderTests
 
             [Flag.8.0]
 
-            Name	Value	Label	Alias	Desc	Class	Sec / Access	Sec / Logging
-            A	B	L	Al	D	C	Authenticated Users	Default for Object
+            Name	Value	Label	Alias	Desc	Class	FormType	ColType	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C	Two-State	General	Authenticated Users	Default for Object
             """;
-
+ 
         var errors = TemplateExpander.ValidateTemplate(template);
 
-        Assert.IsTrue(errors.Any(e => e.Contains("Format Type '8'", StringComparison.Ordinal)));
+        Assert.IsTrue(errors.Any(e => e.Contains("Format Type '8 (String)'", StringComparison.Ordinal)));
     }
 
     [TestMethod]
@@ -168,8 +167,8 @@ public class TemplateExpanderTests
 
             [String.8.0]
 
-            Name	Value	Label	Alias	Desc	Class	Sec / Access	Sec / Logging
-            A	B	L	Al	D	C	Authenticated Users	Default for Object
+            Name	Value	Label	Alias	Desc	Class	FormType	ColType	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C	String	General	Authenticated Users	Default for Object
             """;
 
         var errors = TemplateExpander.ValidateTemplate(template);
@@ -185,8 +184,8 @@ public class TemplateExpanderTests
 
             [Flag.5.2]
 
-            Name	Value	Label	Alias	Desc	Class	Sec / Access	Sec / Logging
-            A	B	L	Al	D	C	Authenticated Users	Default for Object
+            Name	Value	Label	Alias	Desc	Class	FormType	ColType	Color / On	Color / Off	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C	Two-State	Two-State	Blue on Black	Black on White	Authenticated Users	Default for Object
             """;
 
         var errors = TemplateExpander.ValidateTemplate(template);
@@ -202,8 +201,8 @@ public class TemplateExpanderTests
 
             [String.8.2]
 
-            Name	Value	Label	Alias	Desc	Class	Sec / Access	Sec / Logging
-            A	B	L	Al	D	C	Authenticated Users	Default for Object
+            Name	Value	Label	Alias	Desc	Class	FormType	ColType	Color / On	Color / Off	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C	String	Two-State	Blue on Black	Black on White	Authenticated Users	Default for Object
             """;
 
         var errors = TemplateExpander.ValidateTemplate(template);
@@ -219,8 +218,8 @@ public class TemplateExpanderTests
 
             [String.8.2]
 
-            Name	Value	Label	Alias	Desc	Class	Sec / Access	Sec / Logging
-            A	B	L	Al	D	C	Authenticated Users	Default for Object
+            Name	Value	Label	Alias	Desc	Class	FormType	ColType	Color / On	Color / Off	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C	String	Two-State	Blue on Black	Black on White	Authenticated Users	Default for Object
             """;
 
         var errors = TemplateExpander.ValidateTemplate(template);
@@ -234,15 +233,117 @@ public class TemplateExpanderTests
         string template =
             """
 
-            [Numeric.1.3]
+            [Numeric.6.3]
 
-            Name	Value	Label	Alias	Desc	Class	Sec / Access	Sec / Logging
-            A	B	L	Al	D	C	Authenticated Users	Default for Object
+            Name	Value	Label	Alias	Desc	Class	FormType	ColType	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C	Multi-State	Multi-State	Authenticated Users	Default for Object
             """;
 
         var errors = TemplateExpander.ValidateTemplate(template);
 
         Assert.AreEqual(0, errors.Count);
+    }
+
+    [TestMethod]
+    public void ValidateTemplate_FormType_MismatchWithSectionFormatType_ReturnsError()
+    {
+        string template =
+            """
+
+            [Numeric.1.0]
+
+            Name	Value	Label	Alias	Desc	Class	FormType	ColType	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C	Linked	General	Authenticated Users	Default for Object
+            """;
+
+        var errors = TemplateExpander.ValidateTemplate(template);
+
+        Assert.IsTrue(errors.Any(e => e.Contains("does not match section Format Type 'Numeric'", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    [TestMethod]
+    public void ValidateTemplate_FormType_LinkedMissingFormatLinkColumn_ReturnsError()
+    {
+        string template =
+            """
+
+            [Numeric.7.0]
+
+            Name	Value	Label	Alias	Desc	Class	FormType	ColType	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C	Linked	General	Authenticated Users	Default for Object
+            """;
+
+        var errors = TemplateExpander.ValidateTemplate(template);
+
+        Assert.IsTrue(errors.Any(e => e.Contains("requires column 'Format / Link'", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    [TestMethod]
+    public void ValidateTemplate_FormType_LinkedBlankFormatLink_ReturnsError()
+    {
+        string template =
+            """
+
+            [Numeric.7.0]
+
+            Name	Value	Label	Alias	Desc	Class	FormType	Format / Link	ColType	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C	Linked		General	Authenticated Users	Default for Object
+            """;
+
+        var errors = TemplateExpander.ValidateTemplate(template);
+
+        Assert.IsTrue(errors.Any(e => e.Contains("required field 'Format / Link' cannot be blank", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    [TestMethod]
+    public void ValidateTemplate_ColType_MismatchWithSectionColorType_ReturnsError()
+    {
+        string template =
+            """
+
+            [Numeric.1.0]
+
+            Name	Value	Label	Alias	Desc	Class	FormType	ColType	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C	Numeric	Fixed	Authenticated Users	Default for Object
+            """;
+
+        var errors = TemplateExpander.ValidateTemplate(template);
+
+        Assert.IsTrue(errors.Any(e => e.Contains("does not match section Color Type 'General'", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    [TestMethod]
+    public void ValidateTemplate_ColType_TwoStateMissingColorColumns_ReturnsError()
+    {
+        string template =
+            """
+
+            [Flag.5.2]
+
+            Name	Value	Label	Alias	Desc	Class	FormType	ColType	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C	Two-State	Two-State	Authenticated Users	Default for Object
+            """;
+        var errors = TemplateExpander.ValidateTemplate(template);
+
+        Assert.IsTrue(errors.Any(e => e.Contains("requires column 'Color / On'", StringComparison.OrdinalIgnoreCase)));
+        Assert.IsTrue(errors.Any(e => e.Contains("requires column 'Color / Off'", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    [TestMethod]
+    public void ValidateTemplate_ColType_TwoStateBlankColorValue_ReturnsError()
+    {
+        string template =
+            """
+
+            [Flag.5.2]
+
+            Name	Value	Label	Alias	Desc	Class	FormType	ColType	Color / On	Color / Off	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C	Two-State	Two-State		Black on White	Authenticated Users	Default for Object
+            """;
+
+        var errors = TemplateExpander.ValidateTemplate(template);
+
+        Assert.IsTrue(errors.Any(e => e.Contains("required field 'Color / On' cannot be blank", StringComparison.OrdinalIgnoreCase)));
     }
 
     [TestMethod]
@@ -270,8 +371,8 @@ public class TemplateExpanderTests
 
             [Numeric.1.0]
 
-            Name	Value	Label	Alias	Desc	Class	Sec / Access	Sec / Logging
-            A	B	L	Al	D	C	No Access	Default for Object
+            Name	Value	Label	Alias	Desc	Class	FormType	ColType	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C	Numeric	General	No Access	Default for Object
             """;
 
         var errors = TemplateExpander.ValidateTemplate(template);
@@ -287,8 +388,8 @@ public class TemplateExpanderTests
 
             [Numeric.1.0]
 
-            Name	Value	Label	Alias	Desc	Class	Sec / Access	Sec / Logging
-            A	B	L	Al	D	C	M¬R1¬P with CBO	Default for Object
+            Name	Value	Label	Alias	Desc	Class	FormType	ColType	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C	Numeric	General	M¬R1¬P with CBO	Default for Object
             """;
 
         var errors = TemplateExpander.ValidateTemplate(template);
@@ -304,8 +405,8 @@ public class TemplateExpanderTests
 
             [Numeric.1.0]
 
-            Name	Value	Label	Alias	Desc	Class	Sec / Access	Sec / Logging
-            A	B	L	Al	D	C	M¬R9	Default for Object
+            Name	Value	Label	Alias	Desc	Class	FormType	ColType	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C	Numeric	General	M¬R9	Default for Object
             """;
 
         var errors = TemplateExpander.ValidateTemplate(template);
@@ -321,8 +422,8 @@ public class TemplateExpanderTests
 
             [Numeric.1.0]
 
-            Name	Value	Label	Alias	Desc	Class	Sec / Access	Sec / Logging
-            A	B	L	Al	D	C	M¬R1¬R1	Default for Object
+            Name	Value	Label	Alias	Desc	Class	FormType	ColType	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C	Numeric	General	M¬R1¬R1	Default for Object
             """;
 
         var errors = TemplateExpander.ValidateTemplate(template);
@@ -338,8 +439,8 @@ public class TemplateExpanderTests
 
             [Numeric.1.0]
 
-            Name	Value	Label	Alias	Desc	Class	Persist	Sec / Access	Sec / Logging
-            A	B	L	Al	D	C	Retentive	Authenticated Users	Default for Object
+            Name	Value	Label	Alias	Desc	Class	FormType	ColType	Persist	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C	Numeric	General	Retentive	Authenticated Users	Default for Object
             """;
 
         var errors = TemplateExpander.ValidateTemplate(template);
@@ -355,8 +456,8 @@ public class TemplateExpanderTests
 
             [Numeric.1.0]
 
-            Name	Value	Label	Alias	Desc	Class	Persist	Sec / Access	Sec / Logging
-            A	B	L	Al	D	C		Authenticated Users	Default for Object
+            Name	Value	Label	Alias	Desc	Class	FormType	ColType	Persist	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C	Numeric	General		Authenticated Users	Default for Object
             """;
         var errors = TemplateExpander.ValidateTemplate(template);
 
@@ -368,10 +469,10 @@ public class TemplateExpanderTests
     {
         var rows = new[]
         {
-            "Name\tValue\tLabel\tAlias\tDesc\tClass\tSec / Access\tSec / Logging",
-            "TagA\t100\t\t\t\t\tAuthenticated Users\tDefault for Object"
+            "Name\tValue\tLabel\tAlias\tDesc\tClass\tFormType\tColType\tSec / Access\tSec / Logging",
+            "TagA\t100\t\t\t\t\tNumeric\tGeneral\tAuthenticated Users\tDefault for Object"
         };
-        
+
         string template = $"""
 
             [Numeric.1.0]
@@ -380,7 +481,7 @@ public class TemplateExpanderTests
             {rows[1]}
             """;
         var errors = TemplateExpander.ValidateTemplate(template);
-        
+
         if (errors.Count > 0)
         {
             string errorDetails = string.Join("; ", errors);
@@ -398,8 +499,8 @@ public class TemplateExpanderTests
 
             [Numeric.1.0]
 
-            Name	Value	Label	Alias	Desc	Class	Sec / Access	Sec / Logging
-            	100	L	Al	D	C	Authenticated Users	Default for Object
+            Name	Value	Label	Alias	Desc	Class	FormType	ColType	Sec / Access	Sec / Logging
+            	100	L	Al	D	C	Numeric	General	Authenticated Users	Default for Object
             """;
 
         var errors = TemplateExpander.ValidateTemplate(template);
@@ -415,8 +516,8 @@ public class TemplateExpanderTests
 
             [Numeric.1.0]
 
-            Name	Value	Label	Alias	Desc	Class	Sec / Access	Sec / Logging
-            TagA		L	Al	D	C	Authenticated Users	Default for Object
+            Name	Value	Label	Alias	Desc	Class	FormType	ColType	Sec / Access	Sec / Logging
+            TagA		L	Al	D	C	Numeric	General	Authenticated Users	Default for Object
             """;
 
         var errors = TemplateExpander.ValidateTemplate(template);
@@ -432,8 +533,8 @@ public class TemplateExpanderTests
 
             [Numeric.1.0]
 
-            Name	Value	Label	Alias	Desc	Class	Persist	Sec / Access	Sec / Logging
-            A	B	L	Al	D	C	Sticky	Authenticated Users	Default for Object
+            Name	Value	Label	Alias	Desc	Class	FormType	ColType	Persist	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C	Numeric	General	Sticky	Authenticated Users	Default for Object
             """;
 
         var errors = TemplateExpander.ValidateTemplate(template);
@@ -449,8 +550,8 @@ public class TemplateExpanderTests
 
             [Numeric.1.0]
 
-            Name	Value	Label	Alias	Desc	Class	Access	Sec / Access	Sec / Logging
-            A	B	L	Al	D	C	Read Only	Authenticated Users	Default for Object
+            Name	Value	Label	Alias	Desc	Class	FormType	ColType	Access	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C	Numeric	General	Read Only	Authenticated Users	Default for Object
             """;
 
         var errors = TemplateExpander.ValidateTemplate(template);
@@ -466,8 +567,8 @@ public class TemplateExpanderTests
 
             [Numeric.1.0]
 
-            Name	Value	Label	Alias	Desc	Class	Access	Sec / Access	Sec / Logging
-            A	B	L	Al	D	C	Execute	Authenticated Users	Default for Object
+            Name	Value	Label	Alias	Desc	Class	FormType	ColType	Access	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C	Numeric	General	Execute	Authenticated Users	Default for Object
             """;
 
         var errors = TemplateExpander.ValidateTemplate(template);
@@ -483,10 +584,9 @@ public class TemplateExpanderTests
 
             [Numeric.1.0]
 
-            Name	Value	Label	Alias	Desc	Class	Sec / Access	Sec / Logging
-            A	B	L	Al	D	C	Authenticated Users	Log Changes by Users
+            Name	Value	Label	Alias	Desc	Class	FormType	ColType	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C	Numeric	General	Authenticated Users	Log Changes by Users
             """;
-
         var errors = TemplateExpander.ValidateTemplate(template);
 
         Assert.AreEqual(0, errors.Count);
@@ -500,8 +600,8 @@ public class TemplateExpanderTests
 
             [Numeric.1.0]
 
-            Name	Value	Label	Alias	Desc	Class	Sec / Access	Sec / Logging
-            A	B	L	Al	D	C	Authenticated Users	Always Log
+            Name	Value	Label	Alias	Desc	Class	FormType	ColType	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C	Numeric	General	Authenticated Users	Always Log
             """;
 
         var errors = TemplateExpander.ValidateTemplate(template);
