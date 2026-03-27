@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\WorkTools.Core\WorkTools.Core.csproj" />
+    <ProjectReference Include="..\WorkTools.Desktop\WorkTools.Desktop.csproj" />
   </ItemGroup>
 
   <ItemGroup>

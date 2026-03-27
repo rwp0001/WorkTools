@@ -55,6 +55,10 @@ public class TemplateExpanderTests
         """;
 
     private const string Tags = "Tag1\nTag2";
+    private const string RequiredTagColumns =
+        "Name\tValue\tLabel\tAlias\tDesc\tClass\tSec / Access\tSec / Logging";
+    private const string RequiredTagDataRow =
+        "A\tB\tL\tAl\tD\tC\tAuthenticated Users\tDefault for Object";
 
     private static string[] SplitOutputLines(string output) =>
         output.Split(["\r\n", "\r", "\n"], StringSplitOptions.None);
@@ -120,6 +124,372 @@ public class TemplateExpanderTests
                 headerPattern.IsMatch(section.SectionHeader),
                 $"Section header '{section.SectionHeader}' does not match [Datatype.N.N] format.");
         }
+    }
+
+    [TestMethod]
+    public void ValidateTemplate_FormatTypeValidation_FlagWithFormatType5_IsValid()
+    {
+        string template =
+            """
+
+            [Flag.5.0]
+
+            Name	Value	Label	Alias	Desc	Class	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C	Authenticated Users	Default for Object
+            """;
+
+        var errors = TemplateExpander.ValidateTemplate(template);
+
+        Assert.AreEqual(0, errors.Count);
+    }
+
+    [TestMethod]
+    public void ValidateTemplate_FormatTypeValidation_FlagWithFormatType8_ReturnsError()
+    {
+        string template =
+            """
+
+            [Flag.8.0]
+
+            Name	Value	Label	Alias	Desc	Class	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C	Authenticated Users	Default for Object
+            """;
+
+        var errors = TemplateExpander.ValidateTemplate(template);
+
+        Assert.IsTrue(errors.Any(e => e.Contains("Format Type '8'", StringComparison.Ordinal)));
+    }
+
+    [TestMethod]
+    public void ValidateTemplate_FormatTypeValidation_StringWithFormatType8_IsValid()
+    {
+        string template =
+            """
+
+            [String.8.0]
+
+            Name	Value	Label	Alias	Desc	Class	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C	Authenticated Users	Default for Object
+            """;
+
+        var errors = TemplateExpander.ValidateTemplate(template);
+
+        Assert.AreEqual(0, errors.Count);
+    }
+
+    [TestMethod]
+    public void ValidateTemplate_ColorTypeValidation_FlagWithColorType2_IsValid()
+    {
+        string template =
+            """
+
+            [Flag.5.2]
+
+            Name	Value	Label	Alias	Desc	Class	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C	Authenticated Users	Default for Object
+            """;
+
+        var errors = TemplateExpander.ValidateTemplate(template);
+
+        Assert.AreEqual(0, errors.Count);
+    }
+
+    [TestMethod]
+    public void ValidateTemplate_ColorTypeValidation_StringWithColorType2_ReturnsError()
+    {
+        string template =
+            """
+
+            [String.8.2]
+
+            Name	Value	Label	Alias	Desc	Class	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C	Authenticated Users	Default for Object
+            """;
+
+        var errors = TemplateExpander.ValidateTemplate(template);
+
+        Assert.IsTrue(errors.Any(e => e.Contains("Color Type '2 (Two-State)'", StringComparison.Ordinal)));
+    }
+
+    [TestMethod]
+    public void ValidateTemplate_ColorTypeValidation_ErrorIncludesColorTypeName()
+    {
+        string template =
+            """
+
+            [String.8.2]
+
+            Name	Value	Label	Alias	Desc	Class	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C	Authenticated Users	Default for Object
+            """;
+
+        var errors = TemplateExpander.ValidateTemplate(template);
+
+        Assert.IsTrue(errors.Any(e => e.Contains("2 (Two-State)", StringComparison.Ordinal)));
+    }
+
+    [TestMethod]
+    public void ValidateTemplate_ColorTypeValidation_NumericWithColorType3_IsValid()
+    {
+        string template =
+            """
+
+            [Numeric.1.3]
+
+            Name	Value	Label	Alias	Desc	Class	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C	Authenticated Users	Default for Object
+            """;
+
+        var errors = TemplateExpander.ValidateTemplate(template);
+
+        Assert.AreEqual(0, errors.Count);
+    }
+
+    [TestMethod]
+    public void ValidateTemplate_RequiredTagFields_MissingFields_ReturnsError()
+    {
+        string template =
+            """
+
+            [Numeric.1.0]
+
+            Name	Value
+            A	B
+            """;
+
+        var errors = TemplateExpander.ValidateTemplate(template);
+
+        Assert.IsTrue(errors.Any(e => e.Contains("missing required tag field(s)", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    [TestMethod]
+    public void ValidateTemplate_SecAccess_LiteralValue_IsValid()
+    {
+        string template =
+            """
+
+            [Numeric.1.0]
+
+            Name	Value	Label	Alias	Desc	Class	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C	No Access	Default for Object
+            """;
+
+        var errors = TemplateExpander.ValidateTemplate(template);
+
+        Assert.AreEqual(0, errors.Count);
+    }
+
+    [TestMethod]
+    public void ValidateTemplate_SecAccess_RoleListWithCbo_IsValid()
+    {
+        string template =
+            """
+
+            [Numeric.1.0]
+
+            Name	Value	Label	Alias	Desc	Class	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C	M¬R1¬P with CBO	Default for Object
+            """;
+
+        var errors = TemplateExpander.ValidateTemplate(template);
+
+        Assert.AreEqual(0, errors.Count);
+    }
+
+    [TestMethod]
+    public void ValidateTemplate_SecAccess_InvalidToken_ReturnsError()
+    {
+        string template =
+            """
+
+            [Numeric.1.0]
+
+            Name	Value	Label	Alias	Desc	Class	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C	M¬R9	Default for Object
+            """;
+
+        var errors = TemplateExpander.ValidateTemplate(template);
+
+        Assert.IsTrue(errors.Any(e => e.Contains("invalid 'Sec / Access' value", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    [TestMethod]
+    public void ValidateTemplate_Persist_Retentive_IsValid()
+    {
+        string template =
+            """
+
+            [Numeric.1.0]
+
+            Name	Value	Label	Alias	Desc	Class	Persist	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C	Retentive	Authenticated Users	Default for Object
+            """;
+
+        var errors = TemplateExpander.ValidateTemplate(template);
+
+        Assert.AreEqual(0, errors.Count);
+    }
+
+    [TestMethod]
+    public void ValidateTemplate_Persist_Blank_IsValid()
+    {
+        string template =
+            """
+
+            [Numeric.1.0]
+
+            Name	Value	Label	Alias	Desc	Class	Persist	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C		Authenticated Users	Default for Object
+            """;
+        var errors = TemplateExpander.ValidateTemplate(template);
+
+        Assert.AreEqual(0, errors.Count);
+    }
+
+    [TestMethod]
+    public void ValidateTemplate_OptionalFields_AllBlank_IsValid()
+    {
+        var rows = new[]
+        {
+            "Name\tValue\tLabel\tAlias\tDesc\tClass\tSec / Access\tSec / Logging",
+            "TagA\t100\t\t\t\t\tAuthenticated Users\tDefault for Object"
+        };
+        
+        string template = $"""
+
+            [Numeric.1.0]
+
+            {rows[0]}
+            {rows[1]}
+            """;
+        var errors = TemplateExpander.ValidateTemplate(template);
+        
+        if (errors.Count > 0)
+        {
+            string errorDetails = string.Join("; ", errors);
+            Assert.Fail($"Expected no errors but got: {errorDetails}");
+        }
+
+        Assert.AreEqual(0, errors.Count);
+    }
+
+    [TestMethod]
+    public void ValidateTemplate_RequiredField_Name_Blank_ReturnsError()
+    {
+        string template =
+            """
+
+            [Numeric.1.0]
+
+            Name	Value	Label	Alias	Desc	Class	Sec / Access	Sec / Logging
+            	100	L	Al	D	C	Authenticated Users	Default for Object
+            """;
+
+        var errors = TemplateExpander.ValidateTemplate(template);
+
+        Assert.IsTrue(errors.Any(e => e.Contains("required field 'Name' cannot be blank", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    [TestMethod]
+    public void ValidateTemplate_RequiredField_Value_Blank_ReturnsError()
+    {
+        string template =
+            """
+
+            [Numeric.1.0]
+
+            Name	Value	Label	Alias	Desc	Class	Sec / Access	Sec / Logging
+            TagA		L	Al	D	C	Authenticated Users	Default for Object
+            """;
+
+        var errors = TemplateExpander.ValidateTemplate(template);
+
+        Assert.IsTrue(errors.Any(e => e.Contains("required field 'Value' cannot be blank", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    [TestMethod]
+    public void ValidateTemplate_Persist_InvalidValue_ReturnsError()
+    {
+        string template =
+            """
+
+            [Numeric.1.0]
+
+            Name	Value	Label	Alias	Desc	Class	Persist	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C	Sticky	Authenticated Users	Default for Object
+            """;
+
+        var errors = TemplateExpander.ValidateTemplate(template);
+
+        Assert.IsTrue(errors.Any(e => e.Contains("invalid 'Persist' value", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    [TestMethod]
+    public void ValidateTemplate_Access_ReadOnly_IsValid()
+    {
+        string template =
+            """
+
+            [Numeric.1.0]
+
+            Name	Value	Label	Alias	Desc	Class	Access	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C	Read Only	Authenticated Users	Default for Object
+            """;
+
+        var errors = TemplateExpander.ValidateTemplate(template);
+
+        Assert.AreEqual(0, errors.Count);
+    }
+
+    [TestMethod]
+    public void ValidateTemplate_Access_InvalidValue_ReturnsError()
+    {
+        string template =
+            """
+
+            [Numeric.1.0]
+
+            Name	Value	Label	Alias	Desc	Class	Access	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C	Execute	Authenticated Users	Default for Object
+            """;
+
+        var errors = TemplateExpander.ValidateTemplate(template);
+
+        Assert.IsTrue(errors.Any(e => e.Contains("invalid 'Access' value", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    [TestMethod]
+    public void ValidateTemplate_SecLogging_LogChangesByUsers_IsValid()
+    {
+        string template =
+            """
+
+            [Numeric.1.0]
+
+            Name	Value	Label	Alias	Desc	Class	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C	Authenticated Users	Log Changes by Users
+            """;
+
+        var errors = TemplateExpander.ValidateTemplate(template);
+
+        Assert.AreEqual(0, errors.Count);
+    }
+
+    [TestMethod]
+    public void ValidateTemplate_SecLogging_InvalidValue_ReturnsError()
+    {
+        string template =
+            """
+
+            [Numeric.1.0]
+
+            Name	Value	Label	Alias	Desc	Class	Sec / Access	Sec / Logging
+            A	B	L	Al	D	C	Authenticated Users	Always Log
+            """;
+
+        var errors = TemplateExpander.ValidateTemplate(template);
+
+        Assert.IsTrue(errors.Any(e => e.Contains("invalid 'Sec / Logging' value", StringComparison.OrdinalIgnoreCase)));
     }
 
     [TestMethod]
@@ -270,8 +640,8 @@ public class TemplateExpanderTests
 
                 int actualFieldCount = contentLines[d].Split('\t').Length;
                 Assert.AreEqual(expectedFieldCount, actualFieldCount,
-                    $"Section '{sectionHeader}' data row at line {d} ('{contentLines[d]}') has " +
-                    $"{actualFieldCount} field(s) but header has {expectedFieldCount} field(s).");
+                    $"Section '{sectionHeader}' data row at line {d} has {actualFieldCount} field(s) " +
+                    $"but header has {expectedFieldCount} field(s).");
             }
         }
     }
@@ -533,6 +903,7 @@ public class TemplateExpanderTests
             if (!headerPattern.IsMatch(lines[i]))
                 continue;
 
+            // Column header is at i+2
             string columnHeaderLine = lines[i + 2];
             int expectedFieldCount = columnHeaderLine.Split('\t').Length;
 
@@ -547,6 +918,38 @@ public class TemplateExpanderTests
                     $"but header has {expectedFieldCount} field(s).");
             }
         }
+    }
+
+    [TestMethod]
+    public void TestFile_ParseCrimsonExportTagNames_ExtractsKnownTagNames()
+    {
+        string templateText = ReadTestFile();
+
+        string[] tags = TemplateExpander.ParseCrimsonExportTagNames(templateText);
+
+        Assert.IsTrue(tags.Length > 0);
+        CollectionAssert.Contains(tags, "VFD.AC_2210A_C.OCmd_AcqLock");
+    }
+
+    [TestMethod]
+    public void TestFile_BuildTagListFromCrimsonExport_ReturnsOneTagPerLine()
+    {
+        string templateText = ReadTestFile();
+
+        string tagList = TemplateExpander.BuildTagListFromCrimsonExport(templateText);
+        string[] tagLines = tagList.Split(["\r\n", "\r", "\n"], StringSplitOptions.RemoveEmptyEntries);
+
+        Assert.IsTrue(tagLines.Length > 0);
+        Assert.AreEqual(tagLines.Distinct(StringComparer.OrdinalIgnoreCase).Count(), tagLines.Length,
+            "Tag list should be de-duplicated.");
+    }
+
+    [TestMethod]
+    public void TestFile_BuildTagListFromCrimsonExportFile_ReadsUtf16Export()
+    {
+        string tagList = TemplateExpander.BuildTagListFromCrimsonExportFile(TestFilePath);
+
+        Assert.IsTrue(tagList.Contains("VFD.AC_2210A_C.OCmd_AcqLock", StringComparison.Ordinal));
     }
 
     #endregion

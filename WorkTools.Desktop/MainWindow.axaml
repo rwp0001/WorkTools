@@ -1,0 +1,62 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="WorkTools.Desktop.MainWindow"
+        Width="1400"
+        Height="900"
+        MinWidth="1000"
+        MinHeight="700"
+        Title="WorkTools Desktop">
+  <Grid RowDefinitions="Auto,*,Auto" Margin="16" RowSpacing="12">
+    <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8">
+      <Button x:Name="SaveAsButton" Content="Save As" Click="SaveAs_Click" IsEnabled="False" />
+      <Button x:Name="CopyAllButton" Content="Copy All" Click="CopyAll_Click" IsEnabled="False" />
+      <Button x:Name="ClearButton" Content="Clear" Click="Clear_Click" IsEnabled="False" />
+      <ProgressBar x:Name="ProgressBar" Width="180" IsVisible="False" Minimum="0" Maximum="100" Value="0" />
+      <TextBlock x:Name="ProgressText" VerticalAlignment="Center" IsVisible="False" />
+    </StackPanel>
+
+    <Grid Grid.Row="1" ColumnDefinitions="1*,1*" ColumnSpacing="16">
+      <Grid Grid.Column="0" RowDefinitions="Auto,Auto,*,Auto,*" RowSpacing="8">
+        <TextBlock Text="Template" FontWeight="SemiBold" />
+
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8">
+          <TextBox x:Name="FindBox" Width="180" Watermark="Find" />
+          <TextBox x:Name="ReplaceBox" Width="180" />
+          <Button Content="Find Next" Click="FindNext_Click" />
+          <Button Content="Replace" Click="Replace_Click" />
+          <Button Content="Replace All" Click="ReplaceAll_Click" />
+        </StackPanel>
+
+        <TextBox x:Name="TemplateTextBox"
+                 Grid.Row="2"
+                 TextChanged="Input_TextChanged"
+                 AcceptsReturn="True"
+                 TextWrapping="NoWrap" />
+
+        <TextBlock Grid.Row="3" Text="Tags (one per line)" FontWeight="SemiBold" />
+        <TextBox x:Name="TagsTextBox"
+                 Grid.Row="4"
+                 TextChanged="Input_TextChanged"
+                 AcceptsReturn="True"
+                 TextWrapping="NoWrap" />
+      </Grid>
+
+      <Grid Grid.Column="1" RowDefinitions="Auto,*,Auto" RowSpacing="8">
+        <Border x:Name="ValidationBorder" IsVisible="False" Background="#33B00020" BorderBrush="#66B00020" BorderThickness="1" CornerRadius="6" Padding="10">
+          <TextBlock x:Name="ValidationText" Foreground="#FF9A0015" TextWrapping="Wrap" />
+        </Border>
+
+        <TabControl x:Name="PreviewTabControl" Grid.Row="1" />
+
+        <TextBlock x:Name="StatsText"
+                   Grid.Row="2"
+                   FontWeight="SemiBold"
+                   Opacity="0.8" />
+      </Grid>
+    </Grid>
+
+    <Border Grid.Row="2" x:Name="StatusBorder" IsVisible="False" Background="#223072F5" BorderBrush="#553072F5" BorderThickness="1" CornerRadius="6" Padding="10">
+      <TextBlock x:Name="StatusText" />
+    </Border>
+  </Grid>
+</Window>

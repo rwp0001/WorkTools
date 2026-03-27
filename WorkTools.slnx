@@ -6,6 +6,7 @@
   <Project Path="WorkTools.App/WorkTools.App.csproj">
     <Platform Project="x64" />
   </Project>
+  <Project Path="WorkTools.Desktop/WorkTools.Desktop.csproj" />
   <Project Path="WorkTools.Core.Tests/WorkTools.Core.Tests.csproj" />
   <Project Path="WorkTools.Core/WorkTools.Core.csproj">
     <Platform Solution="*|x64" Project="x64" />
