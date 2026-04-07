@@ -1,150 +1,89 @@
 # WorkTools repository instructions
-This tool is used to create files to be imported into a HMI software called Crimson 3.2, it used to program Red Lion HMIs.
-When creating the template the user makes the structure of the first instance of a class (A Rockwell Automation Studio 5000 AOI datatype normally.) in the crimson software.
-After the class was formatted the way they want, they export the the tags to a file.
-The user gets a list of all the instances of the class from a studio 5000 tag export.
-This data is used as inputs to this program to create all the tags the user needs in Crimson to create new HMI screens. 
 
-The Crimson software fails silently without changing the database when importing a malformed file.
-This creates issues for user.
-The goal of this program is to create files that will be imported with out issues.
+This tool is used to create files to be imported into a HMI software called Crimson 3.2, it used to program Red Lion HMIs. When creating the template, the user makes the structure of the first instance of a class (A Rockwell Automation Studio 5000 AOI datatype normally) in the Crimson software. After the class is formatted the way they want, they export the tags to a file. The user gets a list of all the instances of the class from a Studio 5000 tag export. This data is used as inputs to this program to create all the tags the user needs in Crimson to create new HMI screens.
 
-Crimson stores data in an object called a tag.
-This tag object contains information on how to acquire the value, format the value, colorize the value, and the security of the value.
+The Crimson software fails silently without changing the database when importing a malformed file. This creates issues for users. The goal of this program is to create files that will be imported without issues.
 
-Crimson has four datatypes for tags; Simple, Numeric, Flag, and String.
-Simple tags do not have formatting or color options.
-Flag tags are boolean values.
-Strings are are tags that store a series of characters.
-Numeric tags are used for any value that is not a boolean or string.
+Crimson stores data in an object called a tag. This tag object contains information on how to acquire the value, format the value, colorize the value, and the security of the value.
 
-The crimson export file is in a TSV format for the data and plain text for section headers.
+Crimson has four datatypes for tags: Simple, Numeric, Flag, and String. Simple tags do not have formatting or color options. Flag tags are boolean values. Strings are tags that store a series of characters. Numeric tags are used for any value that is not a boolean or string.
 
-The header format is for lines long.
-The first line is blank.
-The second line is the the datatype enclosed in square brackets with two numbers separated by periods.
-The first number is the format type encoded as an integer; 0 General, 1 Numeric, 2 Scientific, 3 Time and Date, 4 IP Address, 5 Two-State, 6 Multi-State, 7 Linked, 8 String.
-The second number is the color type encoded as an integer; 0 General, 1 Fixed, 2 Two-State, 3 Multi-State, 4 Linked.
-The third line is blank.
-the fourth line is is the column headers in tsv format.
-the rest of the lines until a new section header is the tag data in tsv format. 
+The Crimson export file is in a TSV format for the data and plain text for section headers. A full section header is three lines: a blank line, the bracketed section header like [Datatype.#.#], and another blank line.
 
--- Simple Tags --
-The Simple datatype header will always be "[Simple.0.0]". 
-Simple tags are called "Basic" tags in the Crimson UI and are used to represent constants or expressions.
-The Simple datatype will only have the columns "Name", "Value", "Extent", "Sim", "Label", "Alias", "Desc", and "Class".
+The header format is four three long:
+1. The first line is blank.
+2. The second line is the datatype enclosed in square brackets with two numbers separated by periods. The first number is the format type encoded as an integer: 
+   - 0 General
+   - 1 Numeric
+   - 2 Scientific
+   - 3 Time and Date
+   - 4 IP Address
+   - 5 Two-State
+   - 6 Multi-State
+   - 7 Linked
+   - 8 String
+3. The second number is the color type encoded as an integer: 
+   - 0 General
+   - 1 Fixed
+   - 2 Two-State
+   - 3 Multi-State
+   - 4 Linked
+4. The third line is blank.
+5. The next line is the column headers in TSV format. The rest of the lines until a new section header is the tag data in TSV format.
 
+## Tag Types
 
----- From the Data Tab of the Crimson UI. ----
---- Data Source Section ---
+### Simple Tags
+The Simple datatype header will always be "[Simple.0.0]". Simple tags are called "Basic" tags in the Crimson UI and are used to represent constants or expressions. The Simple datatype will only have the columns "Name", "Value", "Extent", "Sim", "Label", "Alias", "Desc", and "Class".
 
-All tags have the column of "Name".
-Name is an unique value used to identify the tag. 
-Periods are used to denote folder levels.
-The value can be accessed in Crimson using "Tag.Name".
-The Column is required, the value is required.
+#### From the Data Tab of the Crimson UI
 
-All tags have the column of "Value".
-Value is ether the lateral value to be used, or the source to be used. 
-If the value is enclosed in square brackets, the source is an external device such as a PLC.
-If the value is a lateral blank string, the value should be ((Empty)) otherwise the string should be enclosed by ".
-The value can be accessed in Crimson using "Tag".
-The Column is required, the value is required.
+##### Data Source Section
+- All tags have the column of "Name". Name is a unique value used to identify the tag. Periods are used to denote folder levels. The value can be accessed in Crimson using "Tag.Name". The column is required, the value is required.
+- All tags have the column of "Value". Value is either the lateral value to be used, or the source to be used. If the value is enclosed in square brackets, the source is an external device such as a PLC. If the value is a lateral blank string, the value should be ((Empty)); otherwise, the string should be enclosed by quotes. The value can be accessed in Crimson using "Tag". The column is required, the value is required.
 
+##### Data Simulation Section
+##### Data Actions Section
+##### Data Setpoint Section
 
---- Data Simulation Section ---
---- Data Actions Section ---
---- Data Setpoint Section ---
+#### From the Format Tab of the Crimson UI
 
----- From the Format Tab of the Crimson UI. ----
---- Data Labels Section ---
-All tags have the column of "Label". 
-The column is a string used by crimson for label shown next to a value. 
-If it blank, Crimson use the Name of the tag.
-This value can be Translated.
-The value can be accessed in Crimson using "Tag.Label".
-The Column is required, the value is optional.
+##### Data Labels Section
+- All tags have the column of "Label". The column is a string used by Crimson for the label shown next to a value. If it is blank, Crimson uses the Name of the tag. This value can be translated. The value can be accessed in Crimson using "Tag.Label". The column is required, the value is optional.
+- All tags have the column of "Alias". If it is blank, Crimson displays the Name of the tag. The value can be used in Crimson to replace the tag name when communicating with a cloud connector. The column is required, the value is optional.
+- All tags have the column of "Desc". This is a string used for a description of the tag. The value can be accessed in Crimson using "Tag.Desc". The column is required, the value is optional.
+- All tags have the column of "Class". This is a string used for the class of the tag. Crimson does not use this value internally. The column is required, the value is optional.
 
-All tags have the column of "Alias".
-If it blank, Crimson use display the Name of the tag.
-The value can be used in Crimson to replace the tag name when communicating with a cloud connector.
-The Column is required, the value is optional.
+##### Format Type Section
+- The "FormType" column is used on all but simple tags. This column is used to define which "Format" prefixed columns will follow it. The valid values are "General", "Numeric", "Scientific", "Time and Date", "IP Address", "Two-State", "Multi-State", "Linked", "String". Flag types can only be "Two-State" or "Linked". String types can only be "General", "Linked", and "String". Numeric types may be any value except "String".
+- The FormType of "General" will not have any "Format" prefixed columns.
+- The FormType of "Linked" will have the next column be "Format / Link". The value will be a tag name, and Crimson will use its formatting when displaying this tag.
+- The FormType of "Two-State" will have the next two columns be "Format / On" and "Format / Off". The values will be strings with the defaults of "ON" and "OFF". If the value is blank, Crimson will display the defaults.
 
-All tags have the column of "Desc".
-This is a string used for a description of the tag. 
-The value can be accessed in Crimson using "Tag.Desc".
-The Column is required, the value is optional.
+##### Data Format Section
 
-All tags have the column of "Class".
-This is a string used for the class of the tag. 
-Crimson does not use this value internally.
-The Column is required, the value is optional.
+#### From the Colors Tab of the Crimson UI
 
---- Format Type Section ---
+##### Color Type Section
+- The "ColType" column is used on all but simple tags. This column is used to define which "Color" prefixed columns will follow it. The valid values are "General", "Fixed", "Two-State", "Multi-State", "Linked". Flag types can only be "Two-State", "Linked", or "Two-State". String types can only be "General", "Linked", and "String".
+- The colors may be encoded as a string containing color names such as "Blue" or "Red"; or a four-digit hex code (0xFFFF) representing a custom color. The data will be formatted as "Foreground Color on Background Color".
+- The ColType of "General" will not have any "Color" prefixed columns.
+- The ColType of "Linked" will have the next column be "Color / Link". The value will be a tag name, and Crimson will use its formatting when colorizing this tag.
+- The ColType of "Fixed" will have the next column be "Color / Color". The value will use the color format above.
+- The ColType of "Two-State" will have the next two columns be "Color / On" and "Color / Off". The values will use the color format above.
 
-The "FormType" Column is used on all but simple tags.
-This column is used to define witch "Format" prefixed columns that will follows it.
-The valid values are "General", "Numeric", "Scientific", "Time and Date", "IP Address", "Two-State", "Multi-State", "Linked", "String".
-Flags types can only be "Two-State" or "Linked".
-String types can only be "General", "Linked" and "String".
-Numeric types may be any value except "String"
+#### From the Alarms Tab of the Crimson UI
 
-The Formtype of "General" will not have any "Format" prefixed columns.
+#### From the Triggers Tab of the Crimson UI
 
-The Formtype of "Linked" will have the next column be "Format / Link".
-The value will be a tag name and Crimson will use its formatting when displaying this tag.
+#### From the Plot Tab of the Crimson UI
 
-The Formtype of "Two-State" will have the next two columns be "Format / On" and "Format / Off". 
-The values will strings with the defaults of "ON" and "OFF".
-If the value is blank, Crimson will display the defaults.
+#### From the Security Tab of the Crimson UI
 
-
-
---- Data Format Section ---
-
----- From the Colors Tab of the Crimson UI. ----
---- Color Type Section ---
-The "ColType" Column is used on all but simple tags.
-This column is used to define witch "Color" prefixed columns that will follows it.
-The valid values are "General", "Fixed", "Two-State", "Multi-State", "Linked".
-Flags types can only be "Two-State", "Linked", or "Two-State".
-String types can only be "General", "Linked" and "String".
-
-The Colors may be encoded as a string containing color name such as "Blue" or "Red"; or a four digit hex code (0xFFFF) representing a custom color.
-The data will be formatted as "Foreground Color on Background Color". 
-
-The Coltype of "General" will not have any "Color" prefixed columns.
-
-The ColType of "Linked" will have the next column be "Color / Link".
-The value will be a tag name and Crimson will use its formatting when colorizing this tag.
-
-The Coltype of "Fixed" will have the next column be "Color / Color".
-The value will use the color format above.
-
-The ColType of "Two-State" will have the next two columns be "Color / On" and "Color / Off".
-The values will use the color format above.
-
-
----- From the Alarms Tab of the Crimson UI. ----
-
----- From the Triggers Tab of the Crimson UI. ----
-
----- From the Plot Tab of the Crimson UI. ----
-
----- From the Security Tab of the Crimson UI. ----
---- Security Section ---
-The "Sec / Access" Column is used on all but simple tags and is used to define the security for a tag.
-The value "Default for Object" is the default with no options set.
-The value "Authenticated Users" means the tag can only be write to when a user is logged on. 
-The value "Unauthenticated Users" means the tag can only be write to when a user is not logged on. 
-These values may be appended with the " and Programs" and/or " with CBO" Options.
-
-Tags where "Users with Specific Rights" Option was selected in the Crimson UI will generate a list of options separated by the char '¬'.
-The valid list member are "M", "R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", and "P".
-These values may be appended with the " with CBO" Option.
-
-The "Sec / Logging" Column is used on all but simple tags and is used to define the Write Logging used by Crimson for this tag.
-The valid options are "Default for Object", "Do Not Log Changes", "Log Changes by Users", "Log Changes by Users and Programs".
+##### Security Section
+- The "Sec / Access" column is used on all but simple tags and is used to define the security for a tag. The value "Default for Object" is the default with no options set. The value "Authenticated Users" means the tag can only be written to when a user is logged on. The value "Unauthenticated Users" means the tag can only be written to when a user is not logged on. These values may be appended with the " and Programs" and/or " with CBO" options.
+- Tags where the "Users with Specific Rights" option was selected in the Crimson UI will generate a list of options separated by the character '¬'. The valid list members are "M", "R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", and "P". These values may be appended with the " with CBO" option.
+- The "Sec / Logging" column is used on all but simple tags and is used to define the Write Logging used by Crimson for this tag. The valid options are "Default for Object", "Do Not Log Changes", "Log Changes by Users", "Log Changes by Users and Programs".
 
 ## Build and test commands
 
