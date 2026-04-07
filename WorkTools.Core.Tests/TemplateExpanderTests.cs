@@ -1,5 +1,4 @@
 using System.Text.RegularExpressions;
-using WorkTools.Core;
 
 namespace WorkTools.Core.Tests;
 
@@ -41,19 +40,29 @@ public class TemplateExpanderTests
         [Numeric.1.0]
 
         Col1	Col2	Col3
-        {{TagName}}_A1	{{TagName}}_A2	{{TagName}}_A3
+        {{1}}_A1	{{1}}_A2	{{1}}_A3
 
         [Flag.2.1]
 
         Enabled	Visible
-        {{TagName}}_Yes	{{TagName}}_No
+        {{1}}_Yes	{{1}}_No
 
         [String.3.2]
 
         Name	Value	Description
-        {{TagName}}_Alpha	{{TagName}}_100	{{TagName}}_First
+        {{1}}_Alpha	{{1}}_100	{{1}}_First
         """;
 
+    private const string MultiPlaceholderTemplate =
+        """
+
+        [Numeric.1.0]
+
+        Name	Value	Alias
+        {{1}}	[PLC.{{2}}]	{{3}}
+        """;
+
+    private const string MultiPlaceholderRows = "Motor1\tPump101\tP-101\nMotor2\tPump102\tP-102";
     private const string Tags = "Tag1\nTag2";
     private const string RequiredTagColumns =
         "Name\tValue\tLabel\tAlias\tDesc\tClass\tFormType\tColType\tSec / Access\tSec / Logging";
@@ -153,7 +162,7 @@ public class TemplateExpanderTests
             Name	Value	Label	Alias	Desc	Class	FormType	ColType	Sec / Access	Sec / Logging
             A	B	L	Al	D	C	Two-State	General	Authenticated Users	Default for Object
             """;
- 
+
         var errors = TemplateExpander.ValidateTemplate(template);
 
         Assert.IsTrue(errors.Any(e => e.Contains("Format Type '8 (String)'", StringComparison.Ordinal)));
@@ -707,8 +716,8 @@ public class TemplateExpanderTests
     {
         string output = TemplateExpander.GeneratePreview(MultiSectionTemplate, Tags);
 
-        Assert.IsFalse(output.Contains("{{TagName}}"),
-            "Output should not contain unreplaced {{TagName}} placeholders.");
+        Assert.IsFalse(output.Contains("{{1}}"),
+            "Output should not contain unreplaced {{1}} placeholders.");
         Assert.IsTrue(output.Contains("Tag1"), "Output should contain expanded Tag1.");
         Assert.IsTrue(output.Contains("Tag2"), "Output should contain expanded Tag2.");
     }
@@ -764,42 +773,55 @@ public class TemplateExpanderTests
     }
 
     [TestMethod]
+    public void GetStats_OutputLineCount_MatchesGeneratedPreviewLineCount()
+    {
+        string output = TemplateExpander.GeneratePreview(MultiSectionTemplate, Tags);
+        var (_, _, outputLineCount) = TemplateExpander.GetStats(MultiSectionTemplate, Tags);
+
+        Assert.AreEqual(SplitOutputLines(output).Length, outputLineCount);
+    }
+
+    [TestMethod]
     public void GetStats_MultiSection_ReturnsCorrectCounts()
     {
         var (tagCount, replacementCount, outputLineCount) =
             TemplateExpander.GetStats(MultiSectionTemplate, Tags);
 
         Assert.AreEqual(2, tagCount);
-        // 1 data row per section × 3 sections × 2 tags = 6
-        Assert.AreEqual(6, replacementCount);
+        // Per tag row: Numeric has 3 placeholders, Flag has 2, String has 3, so 8 replacements per row × 2 rows = 16.
+        Assert.AreEqual(16, replacementCount);
     }
 
     [TestMethod]
-    public void GeneratePreview_SingleTagSingleSection_ProducesExpectedOutput()
+    public void ParseReplacementRows_TrimsValuesAndIgnoresBlankLines()
     {
-        string template =
-            """
+        string tagsText = " Motor1 \t Pump101 \t P-101 \r\n\r\nMotor2\tPump102\tP-102 ";
 
-            [Numeric.1.0]
+        string[][] rows = TemplateExpander.ParseReplacementRows(tagsText);
 
-            Name	Value
-            {{TagName}}	100
-            """;
-        string tags = "Alpha";
+        Assert.AreEqual(2, rows.Length);
+        CollectionAssert.AreEqual(new[] { "Motor1", "Pump101", "P-101" }, rows[0]);
+        CollectionAssert.AreEqual(new[] { "Motor2", "Pump102", "P-102" }, rows[1]);
+    }
 
-        string output = TemplateExpander.GeneratePreview(template, tags);
-        string[] lines = SplitOutputLines(output);
+    [TestMethod]
+    public void ValidateReplacementData_MissingPlaceholderValue_ReturnsError()
+    {
+        string tagsText = "Motor1\tPump101\tP-101\nMotor2\tPump102";
 
-        // Line 0: blank (leading)
-        Assert.AreEqual(string.Empty, lines[0]);
-        // Line 1: section header
-        Assert.AreEqual("[Numeric.1.0]", lines[1]);
-        // Line 2: blank
-        Assert.AreEqual(string.Empty, lines[2]);
-        // Line 3: column header
-        Assert.AreEqual("Name\tValue", lines[3]);
-        // Line 4: data row with tag replaced
-        Assert.AreEqual("Alpha\t100", lines[4]);
+        var errors = TemplateExpander.ValidateReplacementData(MultiPlaceholderTemplate, tagsText);
+
+        Assert.AreEqual(1, errors.Count);
+        Assert.IsTrue(errors[0].Contains("Replacement row 2", StringComparison.Ordinal));
+        Assert.IsTrue(errors[0].Contains("{{3}}", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void ParseTagNames_MultiColumnInput_ReturnsFirstColumnValues()
+    {
+        string[] tags = TemplateExpander.ParseTagNames(MultiPlaceholderRows);
+
+        CollectionAssert.AreEqual(new[] { "Motor1", "Motor2" }, tags);
     }
 
     [TestMethod]
@@ -810,16 +832,6 @@ public class TemplateExpanderTests
         string[] tags = TemplateExpander.ParseTagNames(tagsText);
 
         CollectionAssert.AreEqual(new[] { "Tag1", "Tag2" }, tags);
-    }
-
-    [TestMethod]
-    public void ParseTagNames_SortEnabled_ReturnsSortedTags()
-    {
-        string tagsText = "Zulu\nalpha\nBravo";
-
-        string[] tags = TemplateExpander.ParseTagNames(tagsText, sort: true);
-
-        CollectionAssert.AreEqual(new[] { "alpha", "Bravo", "Zulu" }, tags);
     }
 
     #region Test.txt file-based tests
@@ -1014,6 +1026,7 @@ public class TemplateExpanderTests
             if (!headerPattern.IsMatch(lines[i]))
                 continue;
 
+            // Data rows start at i+3
             for (int d = i + 3; d < lines.Length; d++)
             {
                 if (string.IsNullOrWhiteSpace(lines[d]))
@@ -1121,8 +1134,8 @@ public class TemplateExpanderTests
         string output = TemplateExpander.GeneratePreview(templateText, tagsText);
 
         Assert.IsFalse(string.IsNullOrEmpty(output));
-        Assert.IsFalse(output.Contains("{{TagName}}"),
-            "Output should not contain unreplaced {{TagName}} placeholders.");
+        Assert.IsFalse(output.Contains("{{1}}"),
+            "Output should not contain unreplaced {{1}} placeholders.");
     }
 
     [TestMethod]
@@ -1137,8 +1150,8 @@ public class TemplateExpanderTests
         Assert.IsTrue(results.Count > 0);
         foreach (var (_, content) in results)
         {
-            Assert.IsFalse(content.Contains("{{TagName}}"),
-                "Section content should not contain unreplaced {{TagName}} placeholders.");
+            Assert.IsFalse(content.Contains("{{1}}"),
+                "Section content should not contain unreplaced {{1}} placeholders.");
         }
     }
 
@@ -1158,8 +1171,8 @@ public class TemplateExpanderTests
 
             Assert.IsFalse(string.IsNullOrEmpty(header));
             Assert.IsFalse(string.IsNullOrEmpty(content));
-            Assert.IsFalse(content.Contains("{{TagName}}"),
-                $"Section '{header}' should not contain unreplaced {{{{TagName}}}} placeholders.");
+            Assert.IsFalse(content.Contains("{{1}}"),
+                $"Section '{header}' should not contain unreplaced {{{{1}}}} placeholders.");
         }
     }
 

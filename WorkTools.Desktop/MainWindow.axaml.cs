@@ -1,11 +1,12 @@
-using System.Text;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using System.Text;
 using WorkTools.Core;
 
 namespace WorkTools.Desktop;
@@ -23,13 +24,29 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _debounceTimer;
     private readonly DispatcherTimer _statusTimer;
     private readonly Dictionary<string, string> _sectionFullContent = new();
+    private readonly List<TextBox> _replacementTextBoxes = [];
+    private readonly StackPanel _replacementColumnsPanel;
+    private readonly Border _l5kDropBorder;
+    private readonly TextBox _l5kTemplateTextBox;
     private const int MaxPreviewLines = 500;
     private int _lastFindIndex;
 
     public MainWindow()
     {
         InitializeComponent();
-        ReplaceBox.Text = "{{TagName}}";
+        _replacementColumnsPanel = this.FindControl<StackPanel>("ReplacementColumnsPanel")
+            ?? throw new InvalidOperationException("ReplacementColumnsPanel was not found.");
+        _l5kDropBorder = this.FindControl<Border>("L5kDropBorder")
+            ?? throw new InvalidOperationException("L5kDropBorder was not found.");
+        _l5kTemplateTextBox = this.FindControl<TextBox>("L5kTemplateTextBox")
+            ?? throw new InvalidOperationException("L5kTemplateTextBox was not found.");
+
+        DragDrop.SetAllowDrop(_l5kDropBorder, true);
+        _l5kDropBorder.AddHandler(DragDrop.DragOverEvent, L5kDropBorder_DragOver);
+        _l5kDropBorder.AddHandler(DragDrop.DropEvent, L5kDropBorder_Drop);
+
+        ReplaceBox.Text = "{{1}}";
+        _replacementTextBoxes.Add(TagsTextBox);
 
         _debounceTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
         _debounceTimer.Tick += DebounceTimer_Tick;
@@ -60,11 +77,11 @@ public partial class MainWindow : Window
     private void UpdateButtonStates()
     {
         bool hasTemplate = !string.IsNullOrWhiteSpace(TemplateTextBox.Text);
-        bool hasTags = !string.IsNullOrWhiteSpace(TagsTextBox.Text);
-        bool hasAnyInput = hasTemplate || hasTags;
+        bool hasReplacementInput = _replacementTextBoxes.Any(textBox => !string.IsNullOrWhiteSpace(textBox.Text));
+        bool hasAnyInput = hasTemplate || hasReplacementInput;
 
-        SaveAsButton.IsEnabled = hasTemplate && hasTags;
-        CopyAllButton.IsEnabled = hasTemplate && hasTags;
+        SaveAsButton.IsEnabled = hasTemplate && hasReplacementInput;
+        CopyAllButton.IsEnabled = hasTemplate && hasReplacementInput;
         ClearButton.IsEnabled = hasAnyInput;
     }
 
@@ -85,21 +102,21 @@ public partial class MainWindow : Window
     private async Task UpdatePreviewAsync()
     {
         string templateText = TemplateTextBox.Text ?? string.Empty;
-        string tagsText = TagsTextBox.Text ?? string.Empty;
+        bool hasReplacementInput = _replacementTextBoxes.Any(textBox => !string.IsNullOrWhiteSpace(textBox.Text));
 
         PreviewTabControl.ItemsSource = null;
         _sectionFullContent.Clear();
         ShowPreview();
 
-        if (string.IsNullOrWhiteSpace(templateText) || string.IsNullOrWhiteSpace(tagsText))
+        if (string.IsNullOrWhiteSpace(templateText) || !hasReplacementInput)
         {
             StatsText.Text = string.Empty;
             return;
         }
 
-        if (!templateText.Contains("{{TagName}}", StringComparison.Ordinal))
+        if (!TemplateExpander.ContainsReplacementPlaceholders(templateText))
         {
-            ShowValidationErrors(["Template does not contain {{TagName}} - no replacements will be made."]);
+            ShowValidationErrors(["Template does not contain any replacement placeholders like {{1}}."]);
             return;
         }
 
@@ -107,6 +124,22 @@ public partial class MainWindow : Window
         if (validationErrors.Count > 0)
         {
             ShowValidationErrors(validationErrors);
+            return;
+        }
+
+        var replacementColumns = GetReplacementColumns();
+        var replacementColumnWarnings = ValidateReplacementColumnCounts(replacementColumns);
+        if (replacementColumnWarnings.Count > 0)
+        {
+            ShowValidationErrors(replacementColumnWarnings);
+            return;
+        }
+
+        string tagsText = BuildReplacementRowsText(replacementColumns);
+        var replacementErrors = TemplateExpander.ValidateReplacementData(templateText, tagsText);
+        if (replacementErrors.Count > 0)
+        {
+            ShowValidationErrors(replacementErrors);
             return;
         }
 
@@ -118,14 +151,14 @@ public partial class MainWindow : Window
         try
         {
             var sections = TemplateExpander.ParseTemplateSections(templateText);
-            var tagNames = TemplateExpander.ParseTagNames(tagsText);
+            var replacementRows = TemplateExpander.ParseReplacementRows(tagsText);
 
             var sectionResults = await Task.Run(() =>
             {
                 var results = new (string Header, string Content)[sections.Count];
                 Parallel.For(0, sections.Count, i =>
                 {
-                    results[i] = TemplateExpander.ExpandSection(sections[i], tagNames);
+                    results[i] = TemplateExpander.ExpandSection(sections[i], replacementRows);
                 });
                 return results;
             });
@@ -150,7 +183,7 @@ public partial class MainWindow : Window
             PreviewTabControl.ItemsSource = tabs;
 
             var stats = await Task.Run(() => TemplateExpander.GetStats(templateText, tagsText));
-            StatsText.Text = $"Tags: {stats.TagCount}  |  Replacements: {stats.ReplacementCount}  |  Output lines: {stats.OutputLineCount}";
+            StatsText.Text = $"Rows: {stats.TagCount}  |  Replacements: {stats.ReplacementCount}  |  Output lines: {stats.OutputLineCount}";
         }
         catch (Exception ex)
         {
@@ -162,6 +195,88 @@ public partial class MainWindow : Window
         {
             ProgressBar.IsVisible = false;
             ProgressText.IsVisible = false;
+        }
+    }
+
+    private void AddReplacementColumn_Click(object? sender, RoutedEventArgs e)
+    {
+        int placeholderIndex = _replacementTextBoxes.Count + 1;
+        var textBox = new TextBox
+        {
+            AcceptsReturn = true,
+            TextWrapping = Avalonia.Media.TextWrapping.NoWrap
+        };
+        textBox.TextChanged += Input_TextChanged;
+
+        var placeholderLabel = new TextBlock
+        {
+            Text = $"{{{{{placeholderIndex}}}}}",
+            FontWeight = FontWeight.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        var removeButton = new Button
+        {
+            Content = "×",
+            Width = 28,
+            Height = 28,
+            Padding = new Thickness(0),
+            Tag = textBox
+        };
+        removeButton.Click += RemoveReplacementColumn_Click;
+
+        var header = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            ColumnSpacing = 6,
+            MinHeight = 28
+        };
+        header.Children.Add(placeholderLabel);
+        Grid.SetColumn(removeButton, 1);
+        header.Children.Add(removeButton);
+
+        var column = new Grid
+        {
+            RowDefinitions = new RowDefinitions("Auto,*"),
+            RowSpacing = 4,
+            Width = 240,
+            Tag = placeholderLabel
+        };
+        column.Children.Add(header);
+        Grid.SetRow(textBox, 1);
+        column.Children.Add(textBox);
+
+        _replacementColumnsPanel.Children.Add(column);
+        _replacementTextBoxes.Add(textBox);
+        textBox.Focus();
+        UpdateButtonStates();
+        _debounceTimer.Stop();
+        _debounceTimer.Start();
+    }
+
+    private void RemoveReplacementColumn_Click(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: TextBox textBox })
+            return;
+
+        int textBoxIndex = _replacementTextBoxes.IndexOf(textBox);
+        if (textBoxIndex <= 0)
+            return;
+
+        _replacementTextBoxes.RemoveAt(textBoxIndex);
+        _replacementColumnsPanel.Children.RemoveAt(textBoxIndex);
+        UpdateReplacementColumnHeaders();
+        UpdateButtonStates();
+        _debounceTimer.Stop();
+        _debounceTimer.Start();
+    }
+
+    private void UpdateReplacementColumnHeaders()
+    {
+        for (int i = 1; i < _replacementColumnsPanel.Children.Count; i++)
+        {
+            if (_replacementColumnsPanel.Children[i] is Grid { Tag: TextBlock placeholderLabel })
+                placeholderLabel.Text = $"{{{{{i + 1}}}}}";
         }
     }
 
@@ -217,13 +332,23 @@ public partial class MainWindow : Window
     private async void SaveAs_Click(object? sender, RoutedEventArgs e)
     {
         string templateText = TemplateTextBox.Text ?? string.Empty;
-        string tagsText = TagsTextBox.Text ?? string.Empty;
+        bool hasReplacementInput = _replacementTextBoxes.Any(textBox => !string.IsNullOrWhiteSpace(textBox.Text));
 
-        if (string.IsNullOrWhiteSpace(templateText) || string.IsNullOrWhiteSpace(tagsText))
+        if (string.IsNullOrWhiteSpace(templateText) || !hasReplacementInput)
         {
-            ShowStatus("Please enter template and tag content.", StatusSeverity.Warning);
+            ShowStatus("Please enter template and replacement content.", StatusSeverity.Warning);
             return;
         }
+
+        var replacementColumns = GetReplacementColumns();
+        var replacementColumnWarnings = ValidateReplacementColumnCounts(replacementColumns);
+        if (replacementColumnWarnings.Count > 0)
+        {
+            ShowValidationErrors(replacementColumnWarnings);
+            return;
+        }
+
+        string tagsText = BuildReplacementRowsText(replacementColumns);
 
         var topLevel = TopLevel.GetTopLevel(this);
         if (topLevel?.StorageProvider is null)
@@ -267,13 +392,23 @@ public partial class MainWindow : Window
     private async void CopyAll_Click(object? sender, RoutedEventArgs e)
     {
         string templateText = TemplateTextBox.Text ?? string.Empty;
-        string tagsText = TagsTextBox.Text ?? string.Empty;
+        bool hasReplacementInput = _replacementTextBoxes.Any(textBox => !string.IsNullOrWhiteSpace(textBox.Text));
 
-        if (string.IsNullOrWhiteSpace(templateText) || string.IsNullOrWhiteSpace(tagsText))
+        if (string.IsNullOrWhiteSpace(templateText) || !hasReplacementInput)
         {
-            ShowStatus("Please enter template and tag content.", StatusSeverity.Warning);
+            ShowStatus("Please enter template and replacement content.", StatusSeverity.Warning);
             return;
         }
+
+        var replacementColumns = GetReplacementColumns();
+        var replacementColumnWarnings = ValidateReplacementColumnCounts(replacementColumns);
+        if (replacementColumnWarnings.Count > 0)
+        {
+            ShowValidationErrors(replacementColumnWarnings);
+            return;
+        }
+
+        string tagsText = BuildReplacementRowsText(replacementColumns);
 
         try
         {
@@ -326,9 +461,15 @@ public partial class MainWindow : Window
         }
 
         TemplateTextBox.Text = string.Empty;
-        TagsTextBox.Text = string.Empty;
+        foreach (var textBox in _replacementTextBoxes)
+            textBox.Text = string.Empty;
+        while (_replacementTextBoxes.Count > 1)
+        {
+            _replacementTextBoxes.RemoveAt(_replacementTextBoxes.Count - 1);
+            _replacementColumnsPanel.Children.RemoveAt(_replacementColumnsPanel.Children.Count - 1);
+        }
         FindBox.Text = string.Empty;
-        ReplaceBox.Text = "{{TagName}}";
+        ReplaceBox.Text = "{{1}}";
         _lastFindIndex = 0;
         PreviewTabControl.ItemsSource = null;
         _sectionFullContent.Clear();
@@ -567,5 +708,117 @@ public partial class MainWindow : Window
         }
 
         return text[..Math.Min(index, text.Length)];
+    }
+
+    private string[][] GetReplacementColumns()
+    {
+        return _replacementTextBoxes
+            .Select(textBox => SplitReplacementEntries(textBox.Text))
+            .ToArray();
+    }
+
+    private static string[] SplitReplacementEntries(string? text)
+    {
+        return (text ?? string.Empty)
+            .Split(["\r\n", "\r", "\n"], StringSplitOptions.None)
+            .Select(line => line.Trim())
+            .Where(line => !string.IsNullOrWhiteSpace(line))
+            .ToArray();
+    }
+
+    private static List<string> ValidateReplacementColumnCounts(string[][] replacementColumns)
+    {
+        var warnings = new List<string>();
+        if (replacementColumns.Length <= 1)
+            return warnings;
+
+        int expectedCount = replacementColumns[0].Length;
+        for (int i = 1; i < replacementColumns.Length; i++)
+        {
+            int actualCount = replacementColumns[i].Length;
+            if (actualCount != expectedCount)
+            {
+                warnings.Add($"Placeholder {{{{{i + 1}}}}} has {actualCount} entr{(actualCount == 1 ? "y" : "ies")}, but {{1}} has {expectedCount}.");
+            }
+        }
+
+        return warnings;
+    }
+
+    private static string BuildReplacementRowsText(string[][] replacementColumns)
+    {
+        if (replacementColumns.Length == 0 || replacementColumns[0].Length == 0)
+            return string.Empty;
+
+        var sb = new StringBuilder();
+        int rowCount = replacementColumns[0].Length;
+        for (int row = 0; row < rowCount; row++)
+        {
+            if (row > 0)
+                sb.AppendLine();
+
+            for (int column = 0; column < replacementColumns.Length; column++)
+            {
+                if (column > 0)
+                    sb.Append('\t');
+                sb.Append(replacementColumns[column][row]);
+            }
+        }
+
+        return sb.ToString();
+    }
+
+    private async void L5kDropBorder_Drop(object? sender, DragEventArgs e)
+    {
+        e.Handled = true;
+
+        var files = e.Data.GetFiles()?.OfType<IStorageFile>().ToList();
+        if (files is null || files.Count == 0)
+        {
+            ShowStatus("Drop a valid L5K or L5X file.", StatusSeverity.Warning);
+            return;
+        }
+
+        IStorageFile? targetFile = files.FirstOrDefault(file => file.Name.EndsWith(".l5k", StringComparison.OrdinalIgnoreCase)
+                                                          || file.Name.EndsWith(".l5x", StringComparison.OrdinalIgnoreCase))
+        ?? files.FirstOrDefault();
+
+        if (targetFile is null)
+        {
+            ShowStatus("Drop a valid L5K or L5X file.", StatusSeverity.Warning);
+            return;
+        }
+
+        try
+        {
+            await using var stream = await targetFile.OpenReadAsync();
+            using var reader = new StreamReader(stream, Encoding.UTF8, true);
+            string l5kText = await reader.ReadToEndAsync();
+
+            string template = L5kTemplateGenerator.GenerateCrimsonTemplate(l5kText);
+            _l5kTemplateTextBox.Text = template;
+            _l5kTemplateTextBox.IsVisible = true;
+            _l5kDropBorder.IsVisible = false;
+
+            ShowStatus("Template generated from L5K/L5X successfully.", StatusSeverity.Success);
+        }
+        catch (Exception ex)
+        {
+            ShowStatus($"Error: {ex.Message}", StatusSeverity.Error);
+        }
+    }
+
+    private void L5kDropBorder_DragOver(object? sender, DragEventArgs e)
+    {
+        e.DragEffects = HasDroppedFile(e.Data)
+            ? DragDropEffects.Copy
+            : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private static bool HasDroppedFile(IDataObject data)
+    {
+        var files = data.GetFiles();
+        return files is not null && files.Any();
     }
 }

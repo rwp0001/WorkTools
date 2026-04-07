@@ -106,8 +106,13 @@ The Simple datatype header will always be "[Simple.0.0]". Simple tags are called
 
 ## Key conventions
 
-- The replacement token is the exact literal `{{TagName}}`. Tag input is one tag per line, and blank tag lines are ignored.
+- Replacement tokens use the exact numbered literal pattern `{{1}}`, `{{2}}`, `{{3}}`, and so on.
+- Replacement input is one row per line. Each row is tab-delimited, and column 1 maps to `{{1}}`, column 2 maps to `{{2}}`, etc. Blank lines are ignored.
 - Output shape is test-backed and should not be changed casually: full generated output starts with a leading blank line, then each section writes the original bracketed section header, a blank line, the column header, and the expanded rows.
 - UI tab labels intentionally differ from file output: `ExpandSection` strips the outer brackets for section tab headers, but `WriteSections` keeps the original bracketed section header in saved/generated output.
 - Keep large-output behavior in mind when changing preview code. The WinUI app truncates each visible section preview to 500 lines for responsiveness, but copy/save actions still operate on the full generated content.
 - Tests cover both inline sample templates and checked-in files in `WorkTools.Core.Tests` (`Test.txt`, `TextTemplate.txt`, `TestList.txt`). The test assembly enables method-level parallelization via `MSTestSettings.cs`, so new tests should avoid shared mutable state.
+
+## Repository and Assistant Instructions
+
+- Update repository and assistant instructions when requested and treat them as the source of truth for future code changes.

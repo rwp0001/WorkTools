@@ -5,7 +5,9 @@ namespace WorkTools.Core;
 
 public static class TemplateExpander
 {
-    private const string Placeholder = "{{TagName}}";
+    private const string Placeholder = "{{1}}";
+    private static readonly Regex PlaceholderPattern = new(@"\{\{([1-9]\d*)\}\}", RegexOptions.Compiled);
+    private readonly record struct CompiledTemplateRow(string[] Segments, int[] PlaceholderIndexes);
     private const string SecAccessColumnName = "Sec / Access";
     private const string PersistColumnName = "Persist";
     private const string AccessColumnName = "Access";
@@ -213,12 +215,13 @@ public static class TemplateExpander
     public static void Generate(string templatePath, string tagsPath, string outputPath)
     {
         string[] templateLines = File.ReadAllLines(templatePath);
-        string[] tagNames = ParseTagNames(File.ReadAllText(tagsPath));
+        string[][] replacementRows = ParseReplacementRows(File.ReadAllText(tagsPath));
 
         var sections = ParseTemplate(templateLines);
+        EnsureValidReplacementData(sections, replacementRows);
 
         using var writer = new StreamWriter(outputPath);
-        WriteSections(sections, tagNames, writer);
+        WriteSections(sections, replacementRows, writer);
     }
 
     public static void GenerateFromText(string templateText, string tagsText, string outputPath)
@@ -230,37 +233,56 @@ public static class TemplateExpander
     public static string GeneratePreview(string templateText, string tagsText)
     {
         string[] templateLines = SplitLines(templateText);
-        string[] tagNames = ParseTagNames(tagsText);
+        string[][] replacementRows = ParseReplacementRows(tagsText);
 
         var sections = ParseTemplate(templateLines);
+        EnsureValidReplacementData(sections, replacementRows);
 
         using var writer = new StringWriter();
-        WriteSections(sections, tagNames, writer);
+        WriteSections(sections, replacementRows, writer);
         return writer.ToString();
+    }
+
+    public static string[][] ParseReplacementRows(string tagsText)
+    {
+        return SplitLines(tagsText)
+            .Where(line => !string.IsNullOrWhiteSpace(line))
+            .Select(line => SplitTabDelimited(line)
+                .Select(value => value.Trim())
+                .ToArray())
+            .ToArray();
+    }
+
+    public static bool ContainsReplacementPlaceholders(string templateText)
+    {
+        return !string.IsNullOrWhiteSpace(templateText)
+            && PlaceholderPattern.IsMatch(templateText);
     }
 
     public static (int TagCount, int ReplacementCount, int OutputLineCount) GetStats(string templateText, string tagsText)
     {
         string[] templateLines = SplitLines(templateText);
-        string[] tagNames = ParseTagNames(tagsText);
+        string[][] replacementRows = ParseReplacementRows(tagsText);
 
         var sections = ParseTemplate(templateLines);
+        EnsureValidReplacementData(sections, replacementRows);
 
-        int totalDataRows = sections.Sum(s => s.DataRows.Count);
-        int replacementCount = totalDataRows * tagNames.Length;
+        int totalPlaceholderCount = sections.Sum(s => s.DataRows.Sum(CountPlaceholders));
+        int replacementCount = totalPlaceholderCount * replacementRows.Length;
 
-        // Header lines per section: section header + blank line + column header = 3,
-        // plus the leading blank line and blank separators between sections.
-        int outputLineCount = 1; // leading blank line
+        int outputLineCount = 1;
         for (int s = 0; s < sections.Count; s++)
         {
             if (s > 0)
-                outputLineCount++; // separator blank line
-            outputLineCount += 3; // section header + blank line + column header
-            outputLineCount += sections[s].DataRows.Count * tagNames.Length;
+                outputLineCount++;
+            outputLineCount += 3;
+            outputLineCount += sections[s].DataRows.Count * replacementRows.Length;
         }
 
-        return (tagNames.Length, replacementCount, outputLineCount);
+        if (sections.Count > 0)
+            outputLineCount++;
+
+        return (replacementRows.Length, replacementCount, outputLineCount);
     }
 
     public static List<string> ValidateTemplate(string templateText)
@@ -556,16 +578,24 @@ public static class TemplateExpander
         return true;
     }
 
+    public static List<string> ValidateReplacementData(string templateText, string tagsText)
+    {
+        var sections = ParseTemplateSections(templateText);
+        string[][] replacementRows = ParseReplacementRows(tagsText);
+        return ValidateReplacementData(sections, replacementRows);
+    }
+
     public static List<(string SectionHeader, string Content)> GeneratePreviewBySections(string templateText, string tagsText)
     {
-        string[] tagNames = ParseTagNames(tagsText);
+        string[][] replacementRows = ParseReplacementRows(tagsText);
         var sections = ParseTemplateSections(templateText);
+        EnsureValidReplacementData(sections, replacementRows);
 
         var results = new (string SectionHeader, string Content)[sections.Count];
 
         Parallel.For(0, sections.Count, i =>
         {
-            results[i] = ExpandSection(sections[i], tagNames);
+            results[i] = ExpandSection(sections[i], replacementRows);
         });
 
         return results.ToList();
@@ -573,40 +603,25 @@ public static class TemplateExpander
 
     public static (string Header, string Content) ExpandSection(Section section, string[] tagNames)
     {
-        // Pre-split each data row on the placeholder so each row is scanned only once.
-        var splitRows = new string[section.DataRows.Count][];
-        int totalSegmentLength = 0;
-        for (int r = 0; r < section.DataRows.Count; r++)
-        {
-            splitRows[r] = section.DataRows[r].Split(Placeholder);
-            foreach (var seg in splitRows[r])
-                totalSegmentLength += seg.Length;
-        }
+        return ExpandSection(section, ToReplacementRows(tagNames));
+    }
 
-        // Rough capacity estimate: column header + newline, then per tag per row:
-        // segment chars + inserted tag name chars + newline.
-        // The estimate uses the first tag length as a simple approximation.
-        int avgTagLen = tagNames.Length > 0 ? tagNames[0].Length : 0;
-        int rowCount = section.DataRows.Count;
-        int capacity = section.ColumnHeader.Length + 2
-            + tagNames.Length * (totalSegmentLength + rowCount * (avgTagLen + 2));
+    public static (string Header, string Content) ExpandSection(Section section, string[][] replacementRows)
+    {
+        var compiledRows = CompileTemplateRows(section, out int totalLiteralLength, out int totalPlaceholderCount, out _);
+        EnsureValidReplacementData([section], replacementRows);
+
+        int avgReplacementLength = replacementRows.Length > 0
+            ? (int)Math.Ceiling(replacementRows.Average(row => row.Sum(value => value.Length)))
+            : 0;
+        int capacity = section.ColumnHeader.Length + Environment.NewLine.Length
+            + replacementRows.Length * (totalLiteralLength + (totalPlaceholderCount * avgReplacementLength)
+            + (section.DataRows.Count * Environment.NewLine.Length));
 
         var sb = new StringBuilder(capacity);
-        sb.AppendLine(section.ColumnHeader);
-
-        foreach (string tagName in tagNames)
-        {
-            foreach (var parts in splitRows)
-            {
-                sb.Append(parts[0]);
-                for (int p = 1; p < parts.Length; p++)
-                {
-                    sb.Append(tagName);
-                    sb.Append(parts[p]);
-                }
-                sb.AppendLine();
-            }
-        }
+        using var writer = new StringWriter(sb);
+        writer.WriteLine(section.ColumnHeader);
+        WriteExpandedRows(compiledRows, replacementRows, writer);
 
         string header = section.SectionHeader.Trim();
         if (header.StartsWith('[') && header.EndsWith(']'))
@@ -617,7 +632,13 @@ public static class TemplateExpander
 
     public static string[] ParseTagNames(string tagsText, bool sort = false)
     {
-        return NormalizeTagNames(SplitLines(tagsText), sort: sort);
+        return NormalizeTagNames(
+            SplitLines(tagsText)
+                .Where(line => !string.IsNullOrWhiteSpace(line))
+                .Select(line => SplitTabDelimited(line)
+                    .Select(value => value.Trim())
+                    .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? string.Empty),
+            sort: sort);
     }
 
     public static string[] ParseCrimsonExportTagNames(string exportText, string nameColumn = "Name", bool sort = false)
@@ -674,6 +695,12 @@ public static class TemplateExpander
 
     public static void WriteSections(List<Section> sections, string[] tagNames, TextWriter writer)
     {
+        WriteSections(sections, ToReplacementRows(tagNames), writer);
+    }
+
+    public static void WriteSections(List<Section> sections, string[][] replacementRows, TextWriter writer)
+    {
+        EnsureValidReplacementData(sections, replacementRows);
         writer.WriteLine();
 
         for (int s = 0; s < sections.Count; s++)
@@ -687,25 +714,8 @@ public static class TemplateExpander
             writer.WriteLine();
             writer.WriteLine(section.ColumnHeader);
 
-            // Pre-split rows on the placeholder once per section.
-            var splitRows = new string[section.DataRows.Count][];
-            for (int r = 0; r < section.DataRows.Count; r++)
-                splitRows[r] = section.DataRows[r].Split(Placeholder);
-
-            foreach (string tagName in tagNames)
-            {
-                foreach (var parts in splitRows)
-                {
-                    // Rebuild the row by inserting the current tag name between split segments.
-                    for (int p = 0; p < parts.Length; p++)
-                    {
-                        if (p > 0)
-                            writer.Write(tagName);
-                        writer.Write(parts[p]);
-                    }
-                    writer.WriteLine();
-                }
-            }
+            var compiledRows = CompileTemplateRows(section, out _, out _, out _);
+            WriteExpandedRows(compiledRows, replacementRows, writer);
         }
     }
 
@@ -767,5 +777,112 @@ public static class TemplateExpander
             normalized = normalized.OrderBy(tag => tag, StringComparer.OrdinalIgnoreCase);
 
         return normalized.ToArray();
+    }
+
+    private static List<string> ValidateReplacementData(List<Section> sections, string[][] replacementRows)
+    {
+        var errors = new List<string>();
+        int maxPlaceholderIndex = GetMaxPlaceholderIndex(sections);
+        if (maxPlaceholderIndex == 0)
+            return errors;
+
+        for (int i = 0; i < replacementRows.Length; i++)
+        {
+            if (replacementRows[i].Length < maxPlaceholderIndex)
+            {
+                errors.Add(
+                    $"Replacement row {i + 1} has {replacementRows[i].Length} value(s), but the template requires {maxPlaceholderIndex} value(s) to satisfy placeholders up to {{{{{maxPlaceholderIndex}}}}}.");
+            }
+        }
+
+        return errors;
+    }
+
+    private static void EnsureValidReplacementData(List<Section> sections, string[][] replacementRows)
+    {
+        var errors = ValidateReplacementData(sections, replacementRows);
+        if (errors.Count > 0)
+            throw new InvalidOperationException(string.Join(Environment.NewLine, errors));
+    }
+
+    private static CompiledTemplateRow[] CompileTemplateRows(Section section, out int totalLiteralLength, out int totalPlaceholderCount, out int maxPlaceholderIndex)
+    {
+        var compiledRows = new CompiledTemplateRow[section.DataRows.Count];
+        totalLiteralLength = 0;
+        totalPlaceholderCount = 0;
+        maxPlaceholderIndex = 0;
+
+        for (int r = 0; r < section.DataRows.Count; r++)
+        {
+            string row = section.DataRows[r];
+            var segments = new List<string>();
+            var placeholderIndexes = new List<int>();
+            int position = 0;
+
+            foreach (Match match in PlaceholderPattern.Matches(row))
+            {
+                segments.Add(row[position..match.Index]);
+                int placeholderIndex = int.Parse(match.Groups[1].Value);
+                placeholderIndexes.Add(placeholderIndex);
+                maxPlaceholderIndex = Math.Max(maxPlaceholderIndex, placeholderIndex);
+                totalPlaceholderCount++;
+                position = match.Index + match.Length;
+            }
+
+            segments.Add(row[position..]);
+            totalLiteralLength += segments.Sum(segment => segment.Length);
+            compiledRows[r] = new CompiledTemplateRow(segments.ToArray(), placeholderIndexes.ToArray());
+        }
+
+        return compiledRows;
+    }
+
+    private static void WriteExpandedRows(CompiledTemplateRow[] compiledRows, string[][] replacementRows, TextWriter writer)
+    {
+        foreach (string[] replacementRow in replacementRows)
+        {
+            foreach (var compiledRow in compiledRows)
+            {
+                writer.Write(compiledRow.Segments[0]);
+                for (int i = 0; i < compiledRow.PlaceholderIndexes.Length; i++)
+                {
+                    writer.Write(GetReplacementValue(replacementRow, compiledRow.PlaceholderIndexes[i]));
+                    writer.Write(compiledRow.Segments[i + 1]);
+                }
+                writer.WriteLine();
+            }
+        }
+    }
+
+    private static string GetReplacementValue(string[] replacementRow, int placeholderIndex)
+    {
+        return placeholderIndex <= replacementRow.Length
+            ? replacementRow[placeholderIndex - 1]
+            : string.Empty;
+    }
+
+    private static int GetMaxPlaceholderIndex(List<Section> sections)
+    {
+        int maxPlaceholderIndex = 0;
+
+        foreach (var section in sections)
+        {
+            CompileTemplateRows(section, out _, out _, out int sectionMaxPlaceholderIndex);
+            maxPlaceholderIndex = Math.Max(maxPlaceholderIndex, sectionMaxPlaceholderIndex);
+        }
+
+        return maxPlaceholderIndex;
+    }
+
+    private static int CountPlaceholders(string row)
+    {
+        return PlaceholderPattern.Matches(row).Count;
+    }
+
+    private static string[][] ToReplacementRows(string[] tagNames)
+    {
+        return tagNames
+            .Select(tagName => new[] { tagName })
+            .ToArray();
     }
 }
